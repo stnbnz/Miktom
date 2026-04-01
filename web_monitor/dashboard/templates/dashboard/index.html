@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MikroTik Orbit Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f1015;
+            --glass-bg: rgba(255, 255, 255, 0.04);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --accent-primary: #7000FF;
+            --accent-secondary: #00F0FF;
+            --text-main: #ffffff;
+            --text-muted: #a0a5b1;
+            --success: #00e676;
+            --danger: #ff5252;
+            --warning: #ffb74d;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(circle at 15% 50%, rgba(112, 0, 255, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 85% 30%, rgba(0, 240, 255, 0.1) 0%, transparent 50%);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .navbar {
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(15, 16, 21, 0.8);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--glass-border);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            background: linear-gradient(90deg, var(--accent-secondary), var(--accent-primary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-badge {
+            padding: 6px 16px;
+            border-radius: 50px;
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(0, 230, 118, 0.1);
+            color: var(--success);
+            border: 1px solid rgba(0, 230, 118, 0.2);
+            box-shadow: 0 0 15px rgba(0, 230, 118, 0.2);
+            transition: all 0.3s ease;
+        }
+
+        .status-badge.offline {
+            background: rgba(255, 82, 82, 0.1);
+            color: var(--danger);
+            border: 1px solid rgba(255, 82, 82, 0.2);
+            box-shadow: 0 0 15px rgba(255, 82, 82, 0.2);
+        }
+
+        .status-badge .indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--success);
+            animation: pulse 2s infinite;
+        }
+
+        .status-badge.offline .indicator {
+            background-color: var(--danger);
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(0, 230, 118, 0.7); }
+            70% { box-shadow: 0 0 0 6px rgba(0, 230, 118, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(0, 230, 118, 0); }
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 0 20px;
+            flex: 1;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .header-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            margin-bottom: 30px;
+        }
+
+        .header-info h1 {
+            margin: 0 0 5px 0;
+            font-size: 32px;
+            font-weight: 700;
+        }
+
+        .header-info p {
+            margin: 0;
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 25px;
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 40px rgba(112, 0, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .card:hover::before {
+            opacity: 1;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .card-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-muted);
+        }
+
+        .card-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.05);
+            font-size: 18px;
+        }
+
+        .card-value {
+            font-size: 36px;
+            font-weight: 700;
+            margin-bottom: 5px;
+            display: flex;
+            align-items:baseline;
+            gap: 5px;
+        }
+
+        .card-unit {
+            font-size: 16px;
+            font-weight: 400;
+            color: var(--text-muted);
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            overflow: hidden;
+            margin-top: 15px;
+            position: relative;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+            border-radius: 10px;
+            width: 0%;
+            transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .progress-fill::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+            transform: translateX(-100%);
+            animation: shimmer 2s infinite;
+        }
+
+        @keyframes shimmer {
+            100% { transform: translateX(100%); }
+        }
+
+        .progress-fill.warning {
+            background: linear-gradient(90deg, #ffb74d, #f57c00);
+        }
+
+        .progress-fill.danger {
+            background: linear-gradient(90deg, #ff5252, #d32f2f);
+        }
+
+        .interfaces-section {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 30px;
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+        }
+
+        .interfaces-header {
+            margin-bottom: 20px;
+            font-size: 20px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .interface-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .iface-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: background 0.3s;
+        }
+
+        .iface-card:hover {
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .iface-name {
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .iface-status {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+
+        .iface-up {
+            background: rgba(0, 230, 118, 0.15);
+            color: var(--success);
+        }
+
+        .iface-down {
+            background: rgba(255, 82, 82, 0.15);
+            color: var(--danger);
+        }
+
+        .bottom-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 25px;
+        }
+
+        @media (max-width: 768px) {
+            .bottom-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .notif-container {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            padding-right: 5px;
+        }
+
+        .notif-container::-webkit-scrollbar {
+            width: 6px;
+        }
+        .notif-container::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+        }
+
+        .alert-card {
+            background: rgba(255, 255, 255, 0.03);
+            border-left: 4px solid var(--accent-primary);
+            padding: 12px 15px;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .alert-card.danger {
+            border-left-color: var(--danger);
+            background: rgba(255, 82, 82, 0.05);
+        }
+        
+        .alert-card.warning {
+            border-left-color: var(--warning);
+            background: rgba(255, 183, 77, 0.05);
+        }
+
+        .alert-card.success {
+            border-left-color: var(--success);
+            background: rgba(0, 230, 118, 0.05);
+        }
+
+        .alert-msg {
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .alert-time {
+            font-size: 11px;
+            color: var(--text-muted);
+            white-space: nowrap;
+        }
+
+        .loader-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--bg-color);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 0.5s ease;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(255,255,255,0.1);
+            border-radius: 50%;
+            border-top-color: var(--accent-secondary);
+            animation: spin 1s ease-in-out infinite;
+            margin-bottom: 20px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .error-toast {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            background: rgba(255, 82, 82, 0.9);
+            color: white;
+            padding: 15px 25px;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(255, 82, 82, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            transform: translateY(150%);
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+
+        .error-toast.show {
+            transform: translateY(0);
+        }
+
+        .action-toast {
+            position: fixed;
+            top: 30px;
+            right: 30px;
+            padding: 15px 25px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            transform: translateX(150%);
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 1000;
+            backdrop-filter: blur(10px);
+            color: white;
+            font-weight: 500;
+        }
+
+        .action-toast.show {
+            transform: translateX(0);
+        }
+
+        .action-toast.success {
+            background: rgba(0, 230, 118, 0.85);
+            box-shadow: 0 10px 30px rgba(0, 230, 118, 0.3);
+            border: 1px solid rgba(0, 230, 118, 0.5);
+        }
+
+        .action-toast.error {
+            background: rgba(255, 82, 82, 0.85);
+            box-shadow: 0 10px 30px rgba(255, 82, 82, 0.3);
+            border: 1px solid rgba(255, 82, 82, 0.5);
+        }
+
+        .btn-backup {
+            background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-family: 'Inter', sans-serif;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(112, 0, 255, 0.3);
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-backup:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 240, 255, 0.4);
+        }
+
+        .btn-backup:active {
+            transform: translateY(0);
+        }
+
+        .btn-backup:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="loader-overlay" id="loader">
+        <div class="spinner"></div>
+        <h2 style="font-weight:300; letter-spacing: 2px;">Connecting to MikroTik...</h2>
+    </div>
+
+    <nav class="navbar">
+        <div class="logo">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            Orbit Dashboard
+        </div>
+        <div class="status-badge" id="main-status">
+            <div class="indicator"></div>
+            <span id="internet-text">Connecting...</span>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="header-info">
+            <div>
+                <h1>System Overview</h1>
+                <p>Real-time analytics for RouterBoard <span id="r-board" style="color:var(--text-main); font-weight:600;">...</span></p>
+            </div>
+            <div style="text-align: right;">
+                <p style="margin-bottom: 12px;">Uptime: <span id="r-uptime" style="color:var(--text-main); font-weight:600;">...</span></p>
+                <button class="btn-backup" id="backup-btn" onclick="triggerBackup()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Manual Backup
+                </button>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">CPU Load</span>
+                    <div class="card-icon" style="color: var(--accent-secondary)">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
+                    </div>
+                </div>
+                <div class="card-value">
+                    <span id="cpu-val">0</span><span class="card-unit">%</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="cpu-bar"></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Memory Usage</span>
+                    <div class="card-icon" style="color: var(--accent-primary)">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                    </div>
+                </div>
+                <div class="card-value">
+                    <span id="ram-val">0</span><span class="card-unit">%</span>
+                </div>
+                <p style="margin:5px 0 0 0; font-size:12px; color:var(--text-muted);">
+                    Free: <span id="mem-free">0</span> MB / <span id="mem-total">0</span> MB
+                </p>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="ram-bar"></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">RouterOS Version</span>
+                    <div class="card-icon" style="color: var(--success)">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 16 16 12 12 8"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                    </div>
+                </div>
+                <div class="card-value">
+                    <span id="r-version" style="font-size: 24px;">v...</span>
+                </div>
+                <p style="margin:10px 0 0 0; font-size:13px; color:var(--text-muted);">
+                    System is actively monitored
+                </p>
+            </div>
+        </div>
+
+        <div class="bottom-grid">
+            <div class="interfaces-section">
+                <div class="interfaces-header">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>
+                    Active Interfaces
+                </div>
+                <div class="interface-grid" id="iface-container">
+                    <div style="color: var(--text-muted); font-size:14px;">Loading interfaces...</div>
+                </div>
+            </div>
+
+            <div class="interfaces-section">
+                <div class="interfaces-header">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                    Live Notifications
+                </div>
+                <div class="notif-container" id="notif-container">
+                    <div style="color: var(--text-muted); font-size:14px;">Loading alerts...</div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="error-toast" id="error-toast">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span id="error-msg">Connection lost! Retrying...</span>
+    </div>
+
+    <div class="action-toast" id="action-toast">
+        <svg id="toast-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
+        <span id="action-msg"></span>
+    </div>
+
+    <script>
+        const UPDATE_INTERVAL = 3000;
+        let isFirstLoad = true;
+
+        function updateProgressBar(elementId, value) {
+            const el = document.getElementById(elementId);
+            el.style.width = value + '%';
+            
+            // Color coding
+            el.className = 'progress-fill';
+            if (value > 85) el.classList.add('danger');
+            else if (value > 70) el.classList.add('warning');
+        }
+
+        function renderInterfaces(interfaces) {
+            const container = document.getElementById('iface-container');
+            container.innerHTML = '';
+            
+            if (!interfaces || interfaces.length === 0) {
+                container.innerHTML = '<div style="color: var(--text-muted); font-size:14px;">No ethernet interfaces found.</div>';
+                return;
+            }
+
+            interfaces.forEach(iface => {
+                const isUp = iface.status === 'UP';
+                const statusClass = isUp ? 'iface-up' : 'iface-down';
+                const html = `
+                    <div class="iface-card">
+                        <div class="iface-name">${iface.name}</div>
+                        <div class="iface-status ${statusClass}">${iface.status}</div>
+                    </div>
+                `;
+                container.innerHTML += html;
+            });
+        }
+
+        async function fetchStatus() {
+            try {
+                const res = await fetch('/api/router_status');
+                const data = await res.json();
+
+                if (!data.success) {
+                    showError(data.error || "Failed to fetch data from API");
+                    return;
+                }
+
+                // Hide error and loader
+                hideError();
+                if (isFirstLoad) {
+                    document.getElementById('loader').style.opacity = '0';
+                    setTimeout(() => document.getElementById('loader').style.display = 'none', 500);
+                    isFirstLoad = false;
+                }
+
+                // Update Overview
+                document.getElementById('r-board').textContent = data.board;
+                document.getElementById('r-uptime').textContent = data.uptime;
+                document.getElementById('r-version').textContent = data.version;
+
+                // Update CPU CPU
+                document.getElementById('cpu-val').textContent = data.cpu_load;
+                updateProgressBar('cpu-bar', data.cpu_load);
+
+                // Update RAM
+                document.getElementById('ram-val').textContent = data.ram_usage;
+                document.getElementById('mem-free').textContent = data.free_mem_mb;
+                document.getElementById('mem-total').textContent = data.total_mem_mb;
+                updateProgressBar('ram-bar', data.ram_usage);
+
+                // Update Internet Status
+                const badge = document.getElementById('main-status');
+                const badgeText = document.getElementById('internet-text');
+                
+                if (data.internet_status === 'UP') {
+                    badge.classList.remove('offline');
+                    badgeText.textContent = 'Internet UP';
+                } else {
+                    badge.classList.add('offline');
+                    badgeText.textContent = 'Internet DOWN';
+                }
+
+                // Update Interfaces
+                renderInterfaces(data.interfaces);
+
+                // Update Notifications
+                const notifContainer = document.getElementById('notif-container');
+                notifContainer.innerHTML = '';
+                if (data.alerts && data.alerts.length > 0) {
+                    data.alerts.forEach(alert => {
+                        const html = `
+                            <div class="alert-card ${alert.type}">
+                                <div class="alert-msg">${alert.message}</div>
+                                <div class="alert-time">${alert.time}</div>
+                            </div>
+                        `;
+                        notifContainer.innerHTML += html;
+                    });
+                } else {
+                    notifContainer.innerHTML = '<div style="color: var(--text-muted); font-size:14px;">No active alerts.</div>';
+                }
+
+            } catch (err) {
+                showError("Network unreachable. Is Django running?");
+            }
+        }
+
+        function showError(msg) {
+            const toast = document.getElementById('error-toast');
+            document.getElementById('error-msg').textContent = msg;
+            toast.classList.add('show');
+            document.getElementById('main-status').classList.add('offline');
+            document.getElementById('internet-text').textContent = 'Disconnected';
+        }
+
+        function hideError() {
+            document.getElementById('error-toast').classList.remove('show');
+        }
+
+        function showActionToast(msg, type) {
+            const toast = document.getElementById('action-toast');
+            const icon = document.getElementById('toast-icon');
+            document.getElementById('action-msg').textContent = msg;
+            
+            toast.className = 'action-toast show ' + type;
+            
+            if (type === 'success') {
+                icon.innerHTML = '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>';
+            } else {
+                icon.innerHTML = '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>';
+            }
+            
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 5000);
+        }
+
+        async function triggerBackup() {
+            const btn = document.getElementById('backup-btn');
+            const originalText = btn.innerHTML;
+            
+            btn.disabled = true;
+            btn.innerHTML = '<div style="width:16px; height:16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 1s linear infinite;"></div> Backing up...';
+            
+            try {
+                const res = await fetch('/api/backup');
+                const data = await res.json();
+                
+                if (data.success) {
+                    showActionToast("Backup triggered successfully! Running in background.", "success");
+                } else {
+                    showActionToast("Failed: " + data.error, "error");
+                }
+            } catch (err) {
+                showActionToast("Network error trying to trigger backup.", "error");
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        }
+
+        // Cycle
+        fetchStatus();
+        setInterval(fetchStatus, UPDATE_INTERVAL);
+
+    </script>
+</body>
+</html>
