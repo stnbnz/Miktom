@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MikroTik Orbit Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -53,6 +54,7 @@
             letter-spacing: 1px;
             background: linear-gradient(90deg, var(--accent-secondary), var(--accent-primary));
             -webkit-background-clip: text;
+            background-clip: text;
             -webkit-text-fill-color: transparent;
             display: flex;
             align-items: center;
@@ -505,9 +507,15 @@
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
             Orbit Dashboard
         </div>
-        <div class="status-badge" id="main-status">
-            <div class="indicator"></div>
-            <span id="internet-text">Connecting...</span>
+        <div style="display:flex; gap:15px;">
+            <div class="status-badge" id="latency-badge" style="background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1); color: var(--text-main);">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                <span id="ping-text">... ms</span>
+            </div>
+            <div class="status-badge" id="main-status">
+                <div class="indicator"></div>
+                <span id="internet-text">Connecting...</span>
+            </div>
         </div>
     </nav>
 
@@ -517,12 +525,22 @@
                 <h1>System Overview</h1>
                 <p>Real-time analytics for RouterBoard <span id="r-board" style="color:var(--text-main); font-weight:600;">...</span></p>
             </div>
-            <div style="text-align: right;">
+            <div style="text-align: right; display:flex; flex-direction:column; align-items:flex-end;">
                 <p style="margin-bottom: 12px;">Uptime: <span id="r-uptime" style="color:var(--text-main); font-weight:600;">...</span></p>
-                <button class="btn-backup" id="backup-btn" onclick="triggerBackup()">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                    Manual Backup
-                </button>
+                <div style="display:flex; gap:10px;">
+                    <button class="btn-backup" style="background: linear-gradient(90deg, #d50000, #b71c1c); box-shadow:0 4px 15px rgba(213,0,0,0.3);" id="factory-reset-btn" onclick="triggerReset()">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                        Reset Config
+                    </button>
+                    <button class="btn-backup" style="background: linear-gradient(90deg, #ff5252, #ff1744);" id="reboot-btn" onclick="triggerReboot()">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+                        Reboot
+                    </button>
+                    <button class="btn-backup" id="backup-btn" onclick="triggerBackup()">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        Manual Backup
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -574,6 +592,58 @@
                     System is actively monitored
                 </p>
             </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Active Users</span>
+                    <div class="card-icon" style="color: #00F0FF">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                    </div>
+                </div>
+                <div class="card-value">
+                    <span id="active-users-val">0</span>
+                </div>
+                <p style="margin:10px 0 0 0; font-size:13px; color:var(--text-muted);">
+                    Hotspot & PPPoE Clients
+                </p>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Security Shield</span>
+                    <div class="card-icon" style="color: var(--danger)">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                    </div>
+                </div>
+                <div class="card-value">
+                    <span id="banned-ips-val">0</span>
+                </div>
+                <p style="margin:10px 0 0 0; font-size:13px; color:var(--text-muted);">
+                    Blocked IP addresses
+                </p>
+            </div>
+        </div>
+
+        <div class="bottom-grid" style="grid-template-columns: 2fr 1fr; margin-bottom: 25px;">
+            <div class="interfaces-section" style="padding: 20px;">
+                <div class="interfaces-header">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                    Live Traffic (Tx/Rx) Bandwidth
+                </div>
+                <div style="height: 250px; width: 100%;">
+                    <canvas id="bwChart"></canvas>
+                </div>
+            </div>
+            
+            <div class="interfaces-section">
+                <div class="interfaces-header">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+                    Backup History (MySQL)
+                </div>
+                <div class="notif-container" id="backup-table-container">
+                    <div style="color: var(--text-muted); font-size:14px;">Loading MySQL logs...</div>
+                </div>
+            </div>
         </div>
 
         <div class="bottom-grid">
@@ -610,9 +680,88 @@
         <span id="action-msg"></span>
     </div>
 
+    <div id="reboot-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); backdrop-filter:blur(10px); z-index:2000; align-items:center; justify-content:center; opacity:0; transition:opacity 0.3s ease;">
+        <div style="background:var(--bg-color); border:1px solid rgba(255,82,82,0.5); border-radius:15px; padding:30px; max-width:400px; text-align:center; box-shadow:0 10px 40px rgba(255,82,82,0.3); transform:scale(0.9); transition:transform 0.3s ease;">
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:15px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <h2 style="margin:0 0 10px 0; font-size:22px; font-weight:700;">Confirm System Reboot</h2>
+            <p style="color:var(--text-muted); font-size:14px; line-height:1.5; margin-bottom:25px;">Are you absolutely sure you want to reboot the remote MikroTik router?<br><br><span style="color:var(--danger); font-weight:600;">This action will immediately disconnect your entire network!</span></p>
+            <div style="display:flex; justify-content:center; gap:15px;">
+                <button onclick="closeRebootModal()" style="background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); color:white; padding:12px 24px; border-radius:8px; cursor:pointer; font-weight:600; transition:background 0.3s;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">Cancel</button>
+                <button onclick="executeReboot()" style="background:linear-gradient(90deg, #ff5252, #ff1744); border:none; color:white; padding:12px 24px; border-radius:8px; cursor:pointer; font-weight:600; box-shadow:0 4px 15px rgba(255,82,82,0.4); transition:transform 0.2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='none'">Yes, Reboot Now!</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- RESET MODAL -->
+    <div id="reset-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.8); backdrop-filter:blur(15px); z-index:3000; align-items:center; justify-content:center; opacity:0; transition:opacity 0.3s ease;">
+        <div style="background:#110000; border:2px solid #ff1744; border-radius:15px; padding:30px; max-width:450px; text-align:center; box-shadow:0 10px 40px rgba(255,23,68,0.5); transform:scale(0.9); transition:transform 0.3s ease;">
+            <svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="#ff1744" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:15px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <h2 style="margin:0 0 10px 0; font-size:24px; font-weight:800; color:#ff1744;">CRITICAL WARNING</h2>
+            <p style="color:var(--text-muted); font-size:15px; line-height:1.6; margin-bottom:25px;">You are about to <strong style="color:white;">WIPE ALL CONFIGURATION</strong> on the MikroTik router and restore it to factory defaults.<br><br><span style="color:#ff1744; font-weight:700;">There is NO undo for this operation!</span> Are you absolutely sure?</p>
+            <div style="display:flex; justify-content:center; gap:15px;">
+                <button onclick="closeResetModal()" style="background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); color:white; padding:12px 24px; border-radius:8px; cursor:pointer; font-weight:600; transition:background 0.3s;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">Cancel</button>
+                <button onclick="executeReset()" style="background:linear-gradient(90deg, #d50000, #ff1744); border:none; color:white; padding:12px 24px; border-radius:8px; cursor:pointer; font-weight:800; box-shadow:0 4px 15px rgba(213,0,0,0.5); transition:transform 0.2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='none'">DESTROY CONFIG</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const UPDATE_INTERVAL = 3000;
         let isFirstLoad = true;
+
+        // Chart.js State
+        let bwChart;
+        let chartLabels = Array(20).fill('');
+        let chartTx = Array(20).fill(0);
+        let chartRx = Array(20).fill(0);
+        let lastTx = -1;
+        let lastRx = -1;
+        let lastTime = Date.now();
+
+        function initChart() {
+            const ctx = document.getElementById('bwChart').getContext('2d');
+            Chart.defaults.color = '#a0a5b1';
+            bwChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: chartLabels,
+                    datasets: [
+                        { label: 'Rx (Mbps)', data: chartRx, borderColor: '#00e676', backgroundColor: 'rgba(0,230,118,0.1)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0 },
+                        { label: 'Tx (Mbps)', data: chartTx, borderColor: '#7000FF', backgroundColor: 'rgba(112,0,255,0.1)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 0 }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    animation: { duration: 0 },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' } },
+                        x: { grid: { display: false } }
+                    },
+                    plugins: { legend: { labels: { color: '#ffffff' } } }
+                }
+            });
+        }
+
+        function updateChart(totalTx, totalRx) {
+            let now = Date.now();
+            if (lastTx !== -1 && lastRx !== -1) {
+                let timeDiff = (now - lastTime) / 1000;
+                let txRate = Math.max(0, ((totalTx - lastTx) * 8 / 1000000) / timeDiff); // Mbps
+                let rxRate = Math.max(0, ((totalRx - lastRx) * 8 / 1000000) / timeDiff); // Mbps
+                
+                chartTx.push(txRate.toFixed(2));
+                chartRx.push(rxRate.toFixed(2));
+                chartLabels.push('');
+                
+                chartTx.shift();
+                chartRx.shift();
+                chartLabels.shift();
+                bwChart.update();
+            }
+            lastTx = totalTx;
+            lastRx = totalRx;
+            lastTime = now;
+        }
 
         function updateProgressBar(elementId, value) {
             const el = document.getElementById(elementId);
@@ -662,6 +811,8 @@
                     document.getElementById('loader').style.opacity = '0';
                     setTimeout(() => document.getElementById('loader').style.display = 'none', 500);
                     isFirstLoad = false;
+                    initChart();
+                    fetchBackupLogs();
                 }
 
                 // Update Overview
@@ -679,6 +830,11 @@
                 document.getElementById('mem-total').textContent = data.total_mem_mb;
                 updateProgressBar('ram-bar', data.ram_usage);
 
+                // Update New Metrics
+                document.getElementById('ping-text').textContent = data.ping_latency + ' ms';
+                document.getElementById('active-users-val').textContent = data.active_users;
+                document.getElementById('banned-ips-val').textContent = data.banned_ips;
+
                 // Update Internet Status
                 const badge = document.getElementById('main-status');
                 const badgeText = document.getElementById('internet-text');
@@ -691,8 +847,11 @@
                     badgeText.textContent = 'Internet DOWN';
                 }
 
-                // Update Interfaces
+                // Update Interfaces and Chart
                 renderInterfaces(data.interfaces);
+                let totalTx = 0; let totalRx = 0;
+                data.interfaces.forEach(i => { totalTx += i.tx_byte; totalRx += i.rx_byte; });
+                updateChart(totalTx, totalRx);
 
                 // Update Notifications
                 const notifContainer = document.getElementById('notif-container');
@@ -754,16 +913,163 @@
             btn.innerHTML = '<div style="width:16px; height:16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 1s linear infinite;"></div> Backing up...';
             
             try {
+                showActionToast("Started downloading backup from Router. Note: This may take up to 10 seconds...", "success");
                 const res = await fetch('/api/backup');
-                const data = await res.json();
                 
-                if (data.success) {
-                    showActionToast("Backup triggered successfully! Running in background.", "success");
+                const contentType = res.headers.get('content-type');
+                if (contentType && contentType.includes('application/zip')) {
+                    const blob = await res.blob();
+                    const a = document.createElement('a');
+                    const url = window.URL.createObjectURL(blob);
+                    
+                    // Extract filename from Content-Disposition if possible
+                    let filename = `Mikrotik_ManualBackup_${new Date().getTime()}.zip`;
+                    const disposition = res.headers.get('Content-Disposition');
+                    if (disposition && disposition.indexOf('filename=') !== -1) {
+                        filename = disposition.split('filename=')[1].replace(/['"]/g, '');
+                    }
+                    
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                    
+                    showActionToast("Backup ZIP successfully downloaded!", "success");
+                    fetchBackupLogs(); // Update the MySQL mini table instantly
                 } else {
+                    const data = await res.json();
                     showActionToast("Failed: " + data.error, "error");
                 }
             } catch (err) {
                 showActionToast("Network error trying to trigger backup.", "error");
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        }
+
+        async function fetchBackupLogs() {
+            try {
+                const res = await fetch('/api/backup_history');
+                const data = await res.json();
+                if (data.success && data.data && data.data.length > 0) {
+                    let html = '<table style="width:100%; border-collapse:collapse; font-size:13px; text-align:left;">';
+                    data.data.forEach(log => {
+                        let color = log.status === 'SUCCESS' ? 'var(--success)' : 'var(--danger)';
+                        html += `<tr>
+                            <td style="padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.05); color:var(--text-main); font-family:monospace;">${log.backup_time}</td>
+                            <td style="padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.05); color:var(--text-muted);">${log.backup_file}</td>
+                            <td style="padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.05); color:${color}; font-weight:600; text-align:right;">${log.status}</td>
+                        </tr>`;
+                    });
+                    html += '</table>';
+                    document.getElementById('backup-table-container').innerHTML = html;
+                } else {
+                    document.getElementById('backup-table-container').innerHTML = '<div style="color: var(--text-muted); font-size:14px; padding:20px 0;">No backup logs found in MySQL database.</div>';
+                }
+            } catch (err) {
+                console.error("Failed to load backup logs", err);
+            }
+        }
+        
+        function triggerReboot() {
+            const modal = document.getElementById('reboot-modal');
+            modal.style.display = 'flex';
+            setTimeout(() => {
+                modal.style.opacity = '1';
+                modal.children[0].style.transform = 'scale(1)';
+            }, 10);
+        }
+
+        function closeRebootModal() {
+            const modal = document.getElementById('reboot-modal');
+            modal.style.opacity = '0';
+            modal.children[0].style.transform = 'scale(0.9)';
+            setTimeout(() => modal.style.display = 'none', 300);
+        }
+        
+        async function executeReboot() {
+            closeRebootModal();
+            const btn = document.getElementById('reboot-btn');
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<div style="width:14px; height:14px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 1s linear infinite;"></div> Rebooting...';
+            
+            try {
+                const res = await fetch('/api/reboot', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    showActionToast(data.message, "success");
+                    showError("Router is rebooting. Connection lost.");
+                } else {
+                    showActionToast("Failed: " + data.error, "error");
+                }
+            } catch(e) {
+                showActionToast("Reboot command sent.", "success");
+                showError("Router is rebooting. Connection lost.");
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        }
+        
+        function triggerReset() {
+            const modal = document.getElementById('reset-modal');
+            modal.style.display = 'flex';
+            setTimeout(() => {
+                modal.style.opacity = '1';
+                modal.children[0].style.transform = 'scale(1)';
+            }, 10);
+        }
+
+        function closeResetModal() {
+            const modal = document.getElementById('reset-modal');
+            modal.style.opacity = '0';
+            modal.children[0].style.transform = 'scale(0.9)';
+            setTimeout(() => modal.style.display = 'none', 300);
+        }
+        
+        async function executeReset() {
+            closeResetModal();
+            const btn = document.getElementById('factory-reset-btn');
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<div style="width:14px; height:14px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 1s linear infinite;"></div> Wiping...';
+            
+            try {
+                showActionToast("Securing pre-reset backup... (Stand by ~10s)", "success");
+                const res = await fetch('/api/reset', { method: 'POST' });
+                
+                const contentType = res.headers.get('content-type');
+                if (contentType && contentType.includes('application/zip')) {
+                    const blob = await res.blob();
+                    const a = document.createElement('a');
+                    const url = window.URL.createObjectURL(blob);
+                    
+                    let filename = `PreReset_Backup_${new Date().getTime()}.zip`;
+                    const disposition = res.headers.get('Content-Disposition');
+                    if (disposition && disposition.indexOf('filename=') !== -1) {
+                        filename = disposition.split('filename=')[1].replace(/['"]/g, '');
+                    }
+                    
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                    
+                    showActionToast("Rescue Backup downloaded! Router is formatting...", "success");
+                    showError("Router configs wiped. Connection lost.");
+                } else {
+                    const data = await res.json();
+                    showActionToast("Failed: " + data.error, "error");
+                }
+            } catch(e) {
+                showActionToast("Server disconnected unexpectedly.", "error");
+                showError("Router formatting / network dropped.");
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = originalText;
