@@ -64,12 +64,12 @@ def router_status(request):
         # Ping test
         internet_status = "DOWN"
         try:
-            ping_api = api.get_binary_resource('/ping')
-            ping_result = ping_api.call("ping", {
+            ping_result = api.get_resource('/').call("ping", {
                 "address": "8.8.8.8",
                 "count": "1"
             })
-            internet_status = "UP" if ping_result else "DOWN"
+            if ping_result and int(ping_result[0].get("received", 0)) > 0:
+                internet_status = "UP"
         except Exception:
             internet_status = "DOWN"
 
