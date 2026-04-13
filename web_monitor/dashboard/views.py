@@ -443,13 +443,17 @@ def _get_mikrotik_api(router):
 
 
 def _remove_voucher_from_mikrotik(hotspot_user, code):
+    """Remove voucher/user from MikroTik hotspot"""
     try:
         users = hotspot_user.get(**{'name': code})
-        if users:
-            hotspot_user.remove(id=users[0]['.id'])
-            return True
-    except Exception:
-        pass
+        if users and len(users) > 0:
+            user_id = users[0].get('.id')
+            if user_id:
+                hotspot_user.remove(id=user_id)
+                print(f"Removed {code} from MikroTik (ID: {user_id})")
+                return True
+    except Exception as e:
+        print(f"Error removing {code} from MikroTik: {e}")
     return False
 
 
@@ -583,29 +587,42 @@ def delete_vouchers_batch(request):
         codes = codes[:100]  # Batasi 100 per batch
         
         router = _get_active_router(request)
+        conn = None
         hotspot_user = None
+        deleted_from_mikrotik = 0
+        deleted_from_db = 0
+        
+        # Connect to MikroTik first
         if router:
             try:
                 conn, api = _get_mikrotik_api_for_router(router)
                 hotspot_user = api.get_resource('/ip/hotspot/user')
-            except Exception:
+                print(f"Connected to MikroTik at {router.ip_address}")
+            except Exception as e:
+                print(f"Failed to connect to MikroTik: {e}")
                 hotspot_user = None
         
-        deleted_count = 0
+        # Delete from MikroTik first, then from database
         for code in codes:
+            # Try to remove from MikroTik first
+            if hotspot_user:
+                if _remove_voucher_from_mikrotik(hotspot_user, code):
+                    deleted_from_mikrotik += 1
+            
+            # Then remove from database
             try:
                 rows, _ = Voucher.objects.filter(code=code).delete()
                 if rows:
-                    deleted_count += rows
-            except Exception:
-                pass
-
-            if hotspot_user:
-                _remove_voucher_from_mikrotik(hotspot_user, code)
+                    deleted_from_db += rows
+                    print(f"Deleted {code} from database")
+            except Exception as e:
+                print(f"Error deleting {code} from database: {e}")
         
-        if router and 'conn' in locals():
+        # Disconnect from MikroTik
+        if conn:
             try:
                 conn.disconnect()
+                print("Disconnected from MikroTik")
             except Exception:
                 pass
 
@@ -613,10 +630,11 @@ def delete_vouchers_batch(request):
         _log_activity(
             request, 
             'voucher_batch_delete', 
-            f'Deleted {deleted_count} vouchers from batch',
+            f'Deleted {deleted_from_mikrotik} from MikroTik, {deleted_from_db} from database',
             router=router,
             metadata={
-                'deleted_count': deleted_count,
+                'deleted_from_mikrotik': deleted_from_mikrotik,
+                'deleted_from_database': deleted_from_db,
                 'total_requested': len(codes),
                 'codes': codes
             }
@@ -624,7 +642,8 @@ def delete_vouchers_batch(request):
 
         return JsonResponse({
             'success': True,
-            'deleted': deleted_count,
+            'deleted_from_mikrotik': deleted_from_mikrotik,
+            'deleted_from_db': deleted_from_db,
             'total': len(codes)
         })
     except Exception as e:
