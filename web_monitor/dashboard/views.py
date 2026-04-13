@@ -419,16 +419,16 @@ def generate_vouchers(request):
             profile = 'custom'
             price = int(custom_price) if custom_price is not None else 0
             if duration_unit == 'minute':
-                comment_label = f'Custom {int(custom_duration)} Menit'
+                duration_label = f'Custom {int(custom_duration)} Menit'
             else:
-                comment_label = f'Custom {int(custom_duration)} Jam'
+                duration_label = f'Custom {int(custom_duration)} Jam'
         else:
             if profile not in PROFILE_DURATION:
                 return JsonResponse({'success': False, 'error': 'Profile tidak valid'})
             info = PROFILE_DURATION[profile]
             hours = info['hours']
             price = int(custom_price) if custom_price is not None else info['price']
-            comment_label = info['label']
+            duration_label = info['label']
 
         batch_id  = uuid.uuid4().hex[:8].upper()
 
@@ -447,7 +447,7 @@ def generate_vouchers(request):
                 'name':    code,
                 'password': code,
                 'profile': 'default',
-                'comment': f'Voucher {comment_label} - Batch {batch_id}',
+                'comment': f'Voucher {duration_label} - Batch {batch_id}',
                 'limit-uptime': f'{hours}h',
             })
 
@@ -455,6 +455,7 @@ def generate_vouchers(request):
                 code=code,
                 profile=profile,
                 duration_hours=hours,
+                duration_label=duration_label,
                 price=price,
                 batch=batch_id,
             )
@@ -492,12 +493,18 @@ def get_vouchers(request):
             expired = False
             if v.expires_at:
                 expired = timezone.now() >= v.expires_at
-            profile_label = PROFILE_DURATION.get(v.profile, {}).get('label')
-            if not profile_label:
-                if v.profile == 'custom':
-                    profile_label = f'Custom {v.duration_hours} Jam'
-                else:
-                    profile_label = v.profile
+            
+            # Gunakan duration_label jika ada, jika tidak ada fallback ke logika lama
+            if v.duration_label:
+                profile_label = v.duration_label
+            else:
+                profile_label = PROFILE_DURATION.get(v.profile, {}).get('label')
+                if not profile_label:
+                    if v.profile == 'custom':
+                        profile_label = f'Custom {v.duration_hours} Jam'
+                    else:
+                        profile_label = v.profile
+            
             data.append({
                 'id':             v.id,
                 'code':           v.code,

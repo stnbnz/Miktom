@@ -11,7 +11,8 @@ PROFILE_CHOICES = [
 class Voucher(models.Model):
     code         = models.CharField(max_length=20, unique=True)
     profile      = models.CharField(max_length=20, choices=PROFILE_CHOICES, default='1jam')
-    duration_hours = models.IntegerField(default=1)
+    duration_hours = models.FloatField(default=1)  # Termasuk decimal untuk menit
+    duration_label = models.CharField(max_length=50, blank=True)  # Label asli: "5 Menit" atau "2 Jam"
     price        = models.IntegerField(default=0)   # Harga dalam Rupiah
     created_at   = models.DateTimeField(auto_now_add=True)
     used_at      = models.DateTimeField(null=True, blank=True)
