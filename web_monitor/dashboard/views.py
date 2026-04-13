@@ -26,7 +26,7 @@ from django.http import JsonResponse, StreamingHttpResponse
 from django.utils import timezone
 from datetime import datetime
 
-from .models import Voucher, Router, BackupLog, SystemMetrics, InterfaceMetrics, ActiveUser, NetworkTraffic, SystemAlert, VoucherUsage
+from .models import Voucher, Router, BackupLog, SystemMetrics, InterfaceMetrics, ActiveUser, NetworkTraffic, SystemAlert, VoucherUsage, ActivityLog, UserSession
 
 def _get_active_router(request):
     router_id = request.session.get('active_router_id')
@@ -48,6 +48,32 @@ def _get_mikrotik_api_for_router(router):
         port=router.port, plaintext_login=True
     )
     return conn, conn.get_api()
+
+def _log_activity(request, activity_type, description, router=None, metadata=None, success=True, error_message=""):
+    """Helper function to log user activities"""
+    try:
+        ActivityLog.objects.create(
+            router=router,
+            user=request.user.username if request.user.is_authenticated else "",
+            activity_type=activity_type,
+            description=description,
+            ip_address=_get_client_ip(request),
+            user_agent=request.META.get('HTTP_USER_AGENT', ''),
+            metadata=metadata or {},
+            success=success,
+            error_message=error_message
+        )
+    except Exception as e:
+        print(f"Failed to log activity: {e}")
+
+def _get_client_ip(request):
+    """Get client IP address from request"""
+    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    if x_forwarded_for:
+        ip = x_forwarded_for.split(',')[0]
+    else:
+        ip = request.META.get('REMOTE_ADDR')
+    return ip
 
 def index(request):
     """Render main dashboard HTML"""
@@ -267,6 +293,20 @@ def trigger_backup(request):
         
         response = HttpResponse(buffer.getvalue(), content_type='application/zip')
         response['Content-Disposition'] = f'attachment; filename="Mikrotik_ManualBackup_{latest_backup.backup_time.strftime("%Y%m%d_%H%M")}.zip"'
+        
+        # Log the manual backup activity
+        _log_activity(
+            request, 
+            'backup_manual', 
+            f'Manual backup completed for router {router.name}',
+            router=router,
+            metadata={
+                'backup_file': backup_file,
+                'duration_seconds': duration,
+                'file_size': len(buffer.getvalue())
+            }
+        )
+        
         return response
         
     except Exception as e:
@@ -503,6 +543,23 @@ def generate_vouchers(request):
             created_codes.append(code)
 
         conn.disconnect()
+        
+        # Log the voucher generation activity
+        _log_activity(
+            request, 
+            'voucher_generate', 
+            f'Generated {len(created_codes)} vouchers for profile {profile} (batch {batch_id})',
+            router=router,
+            metadata={
+                'batch_id': batch_id,
+                'profile': profile,
+                'quantity': len(created_codes),
+                'duration_hours': hours,
+                'price': price,
+                'codes': created_codes
+            }
+        )
+        
         return JsonResponse({
             'success': True,
             'batch': batch_id,
@@ -551,6 +608,19 @@ def delete_vouchers_batch(request):
                 conn.disconnect()
             except Exception:
                 pass
+
+        # Log the voucher deletion activity
+        _log_activity(
+            request, 
+            'voucher_batch_delete', 
+            f'Deleted {deleted_count} vouchers from batch',
+            router=router,
+            metadata={
+                'deleted_count': deleted_count,
+                'total_requested': len(codes),
+                'codes': codes
+            }
+        )
 
         return JsonResponse({
             'success': True,
@@ -711,6 +781,19 @@ def kick_hotspot_user(request):
             pass
             
         conn.disconnect()
+        
+        # Log the user kick activity
+        _log_activity(
+            request, 
+            'user_kick', 
+            f'Kicked hotspot user with ID {user_id}',
+            router=router,
+            metadata={
+                'user_id': user_id,
+                'action': 'kick_hotspot_user'
+            }
+        )
+        
         return JsonResponse({'success': True})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
@@ -751,6 +834,20 @@ def add_router(request):
             )
             if Router.objects.count() == 1:
                 request.session['active_router_id'] = r.id
+            
+            # Log router addition
+            _log_activity(
+                request, 
+                'router_add', 
+                f'Added router {r.name} ({r.ip_address})',
+                router=r,
+                metadata={
+                    'router_name': r.name,
+                    'router_ip': r.ip_address,
+                    'router_port': r.port
+                }
+            )
+            
             return JsonResponse({'success': True, 'id': r.id})
         except Exception as e:
             return JsonResponse({'success': False, 'error': str(e)})
@@ -758,20 +855,58 @@ def add_router(request):
 @csrf_exempt
 def delete_router(request, id):
     if request.method == 'POST':
-        Router.objects.filter(id=id).delete()
-        if request.session.get('active_router_id') == id:
-            del request.session['active_router_id']
-        return JsonResponse({'success': True})
+        try:
+            router = Router.objects.get(id=id)
+            router_name = router.name
+            router_ip = router.ip_address
+            
+            Router.objects.filter(id=id).delete()
+            if request.session.get('active_router_id') == id:
+                del request.session['active_router_id']
+            
+            # Log router deletion
+            _log_activity(
+                request, 
+                'router_delete', 
+                f'Deleted router {router_name} ({router_ip})',
+                metadata={
+                    'router_name': router_name,
+                    'router_ip': router_ip,
+                    'router_id': id
+                }
+            )
+            
+            return JsonResponse({'success': True})
+        except Router.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Router not found'})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
 
 @csrf_exempt
 def set_active_router(request):
     if request.method == 'POST':
         data = json_lib.loads(request.body)
         router_id = data.get('id')
-        if Router.objects.filter(id=router_id).exists():
+        try:
+            router = Router.objects.get(id=router_id)
             request.session['active_router_id'] = router_id
+            
+            # Log router switch
+            _log_activity(
+                request, 
+                'router_switch', 
+                f'Switched to router {router.name} ({router.ip_address})',
+                router=router,
+                metadata={
+                    'router_name': router.name,
+                    'router_ip': router.ip_address,
+                    'router_id': router_id
+                }
+            )
+            
             return JsonResponse({'success': True})
-        return JsonResponse({'success': False, 'error': 'Router not found'})
+        except Router.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Router not found'})
 
 def sse_updates(request):
     """Server-Sent Events endpoint for real-time updates"""
@@ -961,5 +1096,4 @@ def sse_updates(request):
     
     response = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
     response['Cache-Control'] = 'no-cache'
-    response['Connection'] = 'keep-alive'
     return response

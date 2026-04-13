@@ -198,5 +198,65 @@ class VoucherUsage(models.Model):
     class Meta:
         ordering = ['-timestamp']
 
+class ActivityLog(models.Model):
+    ACTIVITY_TYPES = [
+        ('voucher_generate', 'Voucher Generation'),
+        ('voucher_delete', 'Voucher Deletion'),
+        ('voucher_batch_delete', 'Batch Voucher Deletion'),
+        ('user_kick', 'User Kick'),
+        ('router_add', 'Router Added'),
+        ('router_delete', 'Router Deleted'),
+        ('router_switch', 'Router Switched'),
+        ('system_reboot', 'System Reboot'),
+        ('system_reset', 'System Reset'),
+        ('backup_manual', 'Manual Backup'),
+        ('login', 'User Login'),
+        ('logout', 'User Logout'),
+    ]
+    
+    router = models.ForeignKey(Router, on_delete=models.SET_NULL, null=True, blank=True)
+    user = models.CharField(max_length=100, blank=True)  # For web interface users
+    timestamp = models.DateTimeField(auto_now_add=True)
+    
+    activity_type = models.CharField(max_length=30, choices=ACTIVITY_TYPES)
+    description = models.TextField()
+    ip_address = models.CharField(max_length=50, blank=True)
+    user_agent = models.TextField(blank=True)
+    
+    # Additional data as JSON
+    metadata = models.JSONField(default=dict, blank=True)
+    
+    success = models.BooleanField(default=True)
+    error_message = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['activity_type', '-timestamp']),
+            models.Index(fields=['router', '-timestamp']),
+        ]
+
+    def __str__(self):
+        return f"{self.activity_type} - {self.timestamp}"
+
+class UserSession(models.Model):
+    session_key = models.CharField(max_length=100, unique=True)
+    user = models.CharField(max_length=100, blank=True)
+    ip_address = models.CharField(max_length=50)
+    user_agent = models.TextField(blank=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_activity = models.DateTimeField(auto_now=True)
+    is_active = models.BooleanField(default=True)
+    
+    # Session data
+    router_id = models.IntegerField(null=True, blank=True)
+    
+    class Meta:
+        ordering = ['-last_activity']
+
+    def __str__(self):
+        return f"{self.user or 'Anonymous'} - {self.ip_address}"
+
     def __str__(self):
         return f"{self.voucher.code} - {self.action}"
