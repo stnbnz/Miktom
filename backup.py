@@ -1,33 +1,29 @@
 import routeros_api
 import paramiko
-import mysql.connector
 import os
 import time
+import sys
+import django
 from datetime import datetime, timedelta
 
-# ==========================
-# ROUTER CONFIG
-# ==========================
+# Setup Django environment
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'web_monitor.settings')
+django.setup()
 
-import sys
-
-if len(sys.argv) >= 4:
-    ROUTER_IP = sys.argv[1]
-    USERNAME = sys.argv[2]
-    PASSWORD = sys.argv[3]
-else:
-    ROUTER_IP = "192.168.1.2"
-    USERNAME = "admin"
-    PASSWORD = "1945"
+from web_monitor.dashboard.models import Router, BackupLog, ActivityLog
 
 # ==========================
-# MYSQL CONFIG
+# COMMAND LINE ARGUMENTS
 # ==========================
 
-DB_HOST = "127.0.0.1"
-DB_USER = "root"
-DB_PASS = ""
-DB_NAME = "mikrotik_automation"
+if len(sys.argv) < 4:
+    print("Usage: python backup.py <ROUTER_IP> <USERNAME> <PASSWORD>")
+    sys.exit(1)
+
+ROUTER_IP = sys.argv[1]
+USERNAME = sys.argv[2]
+PASSWORD = sys.argv[3]
 
 # ==========================
 # BACKUP FOLDER
@@ -60,6 +56,8 @@ local_backup = f"{local_dir}/{router_backup_file}"
 local_export = f"{local_dir}/{router_export_file}"
 
 status = "FAILED"
+error_message = ""
+start_time = time.time()
 
 try:
 
@@ -130,39 +128,58 @@ except Exception as e:
     print("Error:", e)
 
 # ==========================
-# LOG TO MYSQL
+# LOG TO DJANGO DATABASE
 # ==========================
 
 try:
-
-    db = mysql.connector.connect(
-        host=DB_HOST,
-        user=DB_USER,
-        password=DB_PASS,
-        database=DB_NAME
+    # Get router from database
+    router = Router.objects.filter(ip_address=ROUTER_IP).first()
+    if not router:
+        print("Warning: Router not found in database, creating backup log without router reference")
+        router = None
+    
+    # Calculate file sizes
+    backup_size = os.path.getsize(local_backup) if os.path.exists(local_backup) else 0
+    export_size = os.path.getsize(local_export) if os.path.exists(local_export) else 0
+    total_size = backup_size + export_size
+    
+    # Calculate duration
+    duration = int(time.time() - start_time)
+    
+    # Create backup log entry
+    backup_log = BackupLog.objects.create(
+        router=router,
+        backup_time=now,
+        backup_file=router_backup_file,
+        status=status,
+        file_size=total_size,
+        duration=duration
     )
-
-    cursor = db.cursor()
-
-    sql = """
-    INSERT INTO backup_log
-    (router_ip, backup_time, backup_file, status)
-    VALUES (%s,%s,%s,%s)
-    """
-
-    cursor.execute(sql, (
-        ROUTER_IP,
-        now,
-        router_backup_file,
-        status
-    ))
-
-    db.commit()
-
-    print("Log saved to database")
+    
+    # Log activity
+    if router:
+        ActivityLog.objects.create(
+            router=router,
+            activity_type='backup_manual',
+            description=f'Automatic backup completed - {status}',
+            metadata={
+                'backup_file': router_backup_file,
+                'export_file': router_export_file,
+                'backup_size': backup_size,
+                'export_size': export_size,
+                'total_size': total_size,
+                'duration_seconds': duration,
+                'status': status
+            },
+            success=(status == 'SUCCESS'),
+            error_message=error_message
+        )
+    
+    print("Log saved to Django database")
 
 except Exception as e:
     print("DB error:", e)
+    error_message = str(e)
 
 # ==========================
 # CLEANUP OLD BACKUPS

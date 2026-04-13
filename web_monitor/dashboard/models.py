@@ -1,11 +1,13 @@
 from django.db import models
 from django.utils import timezone
+from datetime import timedelta
 
 PROFILE_CHOICES = [
     ('1jam',    '1 Jam'),
     ('3jam',    '3 Jam'),
     ('1hari',   '1 Hari'),
     ('1minggu', '1 Minggu'),
+    ('custom',  'Custom'),
 ]
 
 class Voucher(models.Model):
@@ -198,6 +200,9 @@ class VoucherUsage(models.Model):
     class Meta:
         ordering = ['-timestamp']
 
+    def __str__(self):
+        return f"{self.voucher.code} - {self.action}"
+
 class ActivityLog(models.Model):
     ACTIVITY_TYPES = [
         ('voucher_generate', 'Voucher Generation'),
@@ -210,8 +215,14 @@ class ActivityLog(models.Model):
         ('system_reboot', 'System Reboot'),
         ('system_reset', 'System Reset'),
         ('backup_manual', 'Manual Backup'),
+        ('backup_auto', 'Auto Backup'),
         ('login', 'User Login'),
         ('logout', 'User Logout'),
+        ('speedtest', 'Speedtest'),
+        ('device_detected', 'New Device Detected'),
+        ('failover', 'WAN Failover'),
+        ('security_ban', 'Security Ban'),
+        ('qos_change', 'QoS Change'),
     ]
     
     router = models.ForeignKey(Router, on_delete=models.SET_NULL, null=True, blank=True)
@@ -258,5 +269,135 @@ class UserSession(models.Model):
     def __str__(self):
         return f"{self.user or 'Anonymous'} - {self.ip_address}"
 
+
+# ============================================================
+# MODEL BARU: Sentralisasi data dari standalone scripts
+# ============================================================
+
+class SpeedtestLog(models.Model):
+    """Hasil speedtest — menggantikan tabel speedtest_log raw MySQL"""
+    router = models.ForeignKey(Router, on_delete=models.CASCADE, null=True, blank=True)
+    test_time = models.DateTimeField(auto_now_add=True)
+    ping = models.FloatField(default=0)        # ms
+    download = models.FloatField(default=0)    # Mbps
+    upload = models.FloatField(default=0)      # Mbps
+    server_name = models.CharField(max_length=200, blank=True)
+
+    class Meta:
+        ordering = ['-test_time']
+        db_table = 'dashboard_speedtestlog'
+
     def __str__(self):
-        return f"{self.voucher.code} - {self.action}"
+        return f"Speedtest {self.test_time} - DL:{self.download:.1f} UL:{self.upload:.1f}"
+
+
+class TrackedDevice(models.Model):
+    """Device yang terdeteksi di jaringan — menggantikan known_devices.json"""
+    router = models.ForeignKey(Router, on_delete=models.CASCADE)
+    mac_address = models.CharField(max_length=20, db_index=True)
+    hostname = models.CharField(max_length=200, default='Unknown Device')
+    ip_address = models.CharField(max_length=50, blank=True)
+    first_seen = models.DateTimeField(auto_now_add=True)
+    last_seen = models.DateTimeField(auto_now=True)
+    is_online = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['-last_seen']
+        unique_together = ['router', 'mac_address']
+        db_table = 'dashboard_trackeddevice'
+
+    def __str__(self):
+        return f"{self.hostname} ({self.mac_address})"
+
+
+class FailoverState(models.Model):
+    """State WAN failover per router — menggantikan failover_state.json"""
+    router = models.OneToOneField(Router, on_delete=models.CASCADE, related_name='failover_state')
+    active_wan = models.CharField(max_length=20, default='ISP1_ACTIVE')
+    last_checked = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'dashboard_failoverstate'
+
+    def __str__(self):
+        return f"{self.router.name} - {self.active_wan}"
+
+
+class FailoverEvent(models.Model):
+    """Log event failover WAN"""
+    router = models.ForeignKey(Router, on_delete=models.CASCADE)
+    timestamp = models.DateTimeField(auto_now_add=True)
+    previous_wan = models.CharField(max_length=20, blank=True)
+    new_wan = models.CharField(max_length=20)
+    event_type = models.CharField(max_length=30)  # failover, restore, check_ok
+    detail = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-timestamp']
+        db_table = 'dashboard_failoverevent'
+
+    def __str__(self):
+        return f"{self.event_type} - {self.timestamp}"
+
+
+class SecurityEvent(models.Model):
+    """Log event security shield — ban/detect IP"""
+    router = models.ForeignKey(Router, on_delete=models.CASCADE)
+    timestamp = models.DateTimeField(auto_now_add=True)
+    ip_address = models.CharField(max_length=50)
+    failure_count = models.IntegerField(default=0)
+    action = models.CharField(max_length=20)  # banned, detected, unbanned
+    ban_duration = models.CharField(max_length=20, default='1d')
+    detail = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-timestamp']
+        db_table = 'dashboard_securityevent'
+
+    def __str__(self):
+        return f"{self.action} {self.ip_address} - {self.timestamp}"
+
+
+class QoSState(models.Model):
+    """State Smart QoS per router — menggantikan qos_state.json"""
+    router = models.OneToOneField(Router, on_delete=models.CASCADE, related_name='qos_state')
+    is_throttled = models.BooleanField(default=False)
+    last_checked = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'dashboard_qosstate'
+
+    def __str__(self):
+        return f"{self.router.name} - {'Throttled' if self.is_throttled else 'Normal'}"
+
+
+class QoSEvent(models.Model):
+    """Log event QoS — throttle/restore"""
+    router = models.ForeignKey(Router, on_delete=models.CASCADE)
+    timestamp = models.DateTimeField(auto_now_add=True)
+    event_type = models.CharField(max_length=20)  # throttled, restored, check_ok
+    rx_mbps = models.FloatField(default=0)
+    tx_mbps = models.FloatField(default=0)
+    queue_name = models.CharField(max_length=50, blank=True)
+    limit_applied = models.CharField(max_length=20, blank=True)
+    detail = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-timestamp']
+        db_table = 'dashboard_qosevent'
+
+    def __str__(self):
+        return f"{self.event_type} - {self.timestamp}"
+
+
+class MonitorState(models.Model):
+    """State monitoring per router — menggantikan router_state.json"""
+    router = models.OneToOneField(Router, on_delete=models.CASCADE, related_name='monitor_state')
+    state_data = models.JSONField(default=dict)  # Interface states, flap counts, internet status
+    last_checked = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'dashboard_monitorstate'
+
+    def __str__(self):
+        return f"{self.router.name} monitor state"
