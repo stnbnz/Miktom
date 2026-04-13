@@ -334,6 +334,22 @@
         sel_prof = prof;
     }
 
+    function updateVouchers(data) {
+        try {
+            if (data.error) {
+                showToast('Failed to load vouchers: ' + data.error, 'error');
+                return;
+            }
+            
+            if (data.vouchers) {
+                v_list = data.vouchers;
+                render();
+            }
+        } catch(e) {
+            showToast('Failed to update vouchers', 'error');
+        }
+    }
+
     async function loadVouchers() {
         try {
             const res = await fetch('/api/voucher/list');
@@ -511,6 +527,11 @@ let t=0, a=0, u=0, onl=0, exp=0;
         }
     }
 
+    window.addEventListener('focus', () => {
+        // Real-time updates are handled by SSE
+    });
+
+    // Initial load
     loadVouchers();
 </script>
 {% endblock %}

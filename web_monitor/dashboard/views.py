@@ -6,6 +6,9 @@ import random
 import string
 import uuid
 import mysql.connector
+import json
+import time
+import threading
 from datetime import datetime, timedelta
 
 
@@ -19,11 +22,11 @@ except ImportError:
 last_internet_status = "UP"
 last_interface_status = {}
 from django.shortcuts import render
-from django.http import JsonResponse
+from django.http import JsonResponse, StreamingHttpResponse
 from django.utils import timezone
 from datetime import datetime
 
-from .models import Voucher, Router
+from .models import Voucher, Router, BackupLog, SystemMetrics, InterfaceMetrics, ActiveUser, NetworkTraffic, SystemAlert, VoucherUsage
 
 def _get_active_router(request):
     router_id = request.session.get('active_router_id')
@@ -152,24 +155,43 @@ def router_status(request):
             combined_message = "🔔 STATE CHANGE DETECTED:\n" + "\n".join(messages_to_send)
             threading.Thread(target=send_telegram, args=(combined_message,)).start()
 
+        # Save system metrics to database
+        system_metric = SystemMetrics.objects.create(
+            router=router,
+            cpu_load=cpu_load,
+            ram_usage=ram_usage,
+            free_memory_mb=free_mem // (1024 * 1024),
+            total_memory_mb=total_mem // (1024 * 1024),
+            uptime=uptime,
+            version=version,
+            board_name=board,
+            internet_status=internet_status,
+            ping_latency=int(ping_latency) if ping_latency.isdigit() else 0,
+            active_users=active_users,
+            banned_ips=banned_ips
+        )
+        
+        # Save interface metrics
+        for iface in interfaces_data:
+            InterfaceMetrics.objects.create(
+                router=router,
+                system_metric=system_metric,
+                name=iface["name"],
+                status=iface["status"],
+                tx_bytes=iface["tx_byte"],
+                rx_bytes=iface["rx_byte"]
+            )
+        
+        # Save alerts to database
+        for alert in alerts:
+            SystemAlert.objects.create(
+                router=router,
+                alert_type=alert["type"],
+                message=alert["message"]
+            )
+
         # Build Notifications/Alerts
         connection.disconnect()
-        alerts = []
-        time_now = datetime.now().strftime("%H:%M:%S")
-        if cpu_load > 80:
-            alerts.append({"type": "danger", "message": f"🔥 CPU is critically HIGH at {cpu_load}%", "time": time_now})
-        if ram_usage > 80:
-            alerts.append({"type": "danger", "message": f"🔥 RAM usage is HIGH at {ram_usage}%", "time": time_now})
-        if internet_status == "DOWN":
-            alerts.append({"type": "danger", "message": "🌐 INTERNET CONNECTION DOWN", "time": time_now})
-        for iface in interfaces_data:
-            if iface["status"] == "DOWN":
-                alerts.append({"type": "warning", "message": f"⚠️ Interface {iface['name']} is DOWN", "time": time_now})
-            else:
-                alerts.append({"type": "success", "message": f"✅ Interface {iface['name']} is UP", "time": time_now})
-        
-        if not alerts:
-            alerts.append({"type": "success", "message": "✅ System is running smoothly", "time": time_now})
 
         return JsonResponse({
             "success": True,
@@ -210,19 +232,21 @@ def trigger_backup(request):
         python_exe = sys.executable
         
         # Block until backup.py finishes
-        subprocess.run([python_exe, script_path, router.ip_address, router.username, router.password], cwd=os.path.dirname(script_path), capture_output=True)
+        start_time = time.time()
+        result = subprocess.run([python_exe, script_path, router.ip_address, router.username, router.password], cwd=os.path.dirname(script_path), capture_output=True)
+        duration = time.time() - start_time
         
-        db = mysql.connector.connect(host="127.0.0.1", user="root", password="", database="mikrotik_automation")
-        cursor = db.cursor()
-        cursor.execute("SELECT backup_file, backup_time FROM backup_log ORDER BY id DESC LIMIT 1")
-        row = cursor.fetchone()
-        db.close()
-        
-        if not row:
-            return JsonResponse({"success": False, "error": "No backup log found."})
+        # Get the latest backup log from Django database
+        try:
+            latest_backup = BackupLog.objects.filter(router=router).order_by('-backup_time').first()
+            if not latest_backup:
+                return JsonResponse({"success": False, "error": "No backup log found."})
+                
+            backup_file = latest_backup.backup_file
+            date_folder = latest_backup.backup_time.strftime("%Y-%m-%d")
             
-        backup_file = row[0]
-        date_folder = row[1].strftime("%Y-%m-%d")
+        except Exception as e:
+            return JsonResponse({"success": False, "error": f"Failed to get backup log: {str(e)}"})
         
         # Locate files on disk (path relative to project root)
         base_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "mikrotik-backup", router.ip_address, date_folder))
@@ -242,7 +266,7 @@ def trigger_backup(request):
         buffer.seek(0)
         
         response = HttpResponse(buffer.getvalue(), content_type='application/zip')
-        response['Content-Disposition'] = f'attachment; filename="Mikrotik_ManualBackup_{row[1].strftime("%Y%m%d_%H%M")}.zip"'
+        response['Content-Disposition'] = f'attachment; filename="Mikrotik_ManualBackup_{latest_backup.backup_time.strftime("%Y%m%d_%H%M")}.zip"'
         return response
         
     except Exception as e:
@@ -252,24 +276,24 @@ def trigger_backup(request):
         })
 
 def backup_history(request):
-    """API endpoint to get last 5 mysql backup logs"""
+    """API endpoint to get backup logs from Django database"""
     try:
-        db = mysql.connector.connect(
-            host="127.0.0.1",
-            user="root",
-            password="",
-            database="mikrotik_automation"
-        )
-        cursor = db.cursor(dictionary=True)
-        cursor.execute("SELECT backup_time, backup_file, status FROM backup_log ORDER BY id DESC LIMIT 5")
-        rows = cursor.fetchall()
-        db.close()
-        
-        for row in rows:
-            if isinstance(row['backup_time'], datetime):
-                row['backup_time'] = row['backup_time'].strftime("%Y-%m-%d %H:%M")
+        router = _get_active_router(request)
+        if not router:
+            return JsonResponse({"success": False, "error": "No router configured."})
+            
+        backups = BackupLog.objects.filter(router=router).order_by('-backup_time')[:10]
+        data = []
+        for backup in backups:
+            data.append({
+                'backup_time': backup.backup_time.strftime("%Y-%m-%d %H:%M"),
+                'backup_file': backup.backup_file,
+                'status': backup.status,
+                'file_size': backup.file_size,
+                'duration': backup.duration
+            })
                 
-        return JsonResponse({"success": True, "data": rows})
+        return JsonResponse({"success": True, "data": data})
     except Exception as e:
         return JsonResponse({"success": False, "error": str(e)})
 
@@ -309,25 +333,25 @@ def reset_router(request):
             
             subprocess.run([python_exe, script_path, router.ip_address, router.username, router.password], cwd=os.path.dirname(script_path), capture_output=True)
             
-            db = mysql.connector.connect(host="127.0.0.1", user="root", password="", database="mikrotik_automation")
-            cursor = db.cursor()
-            cursor.execute("SELECT backup_file, backup_time FROM backup_log ORDER BY id DESC LIMIT 1")
-            row = cursor.fetchone()
-            db.close()
-            
-            if not row:
-                return JsonResponse({"success": False, "error": "Pre-reset Backup failed without logs."})
+            # Get the latest backup log from Django database
+            try:
+                latest_backup = BackupLog.objects.filter(router=router).order_by('-backup_time').first()
+                if not latest_backup:
+                    return JsonResponse({"success": False, "error": "Pre-reset Backup failed without logs."})
+                    
+                backup_file = latest_backup.backup_file
+                date_folder = latest_backup.backup_time.strftime("%Y-%m-%d")
+                base_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "mikrotik-backup", router.ip_address, date_folder))
                 
-            backup_file = row[0]
-            date_folder = row[1].strftime("%Y-%m-%d")
-            base_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "mikrotik-backup", router.ip_address, date_folder))
-            
-            bpath = os.path.join(base_dir, backup_file)
-            export_file = backup_file.replace("backup_", "export_").replace(".backup", ".rsc")
-            epath = os.path.join(base_dir, export_file)
-            
-            if not os.path.isfile(bpath) and not os.path.isfile(epath):
-                return JsonResponse({"success": False, "error": f"Rescue Backup failed to fetch into {base_dir}"})
+                bpath = os.path.join(base_dir, backup_file)
+                export_file = backup_file.replace("backup_", "export_").replace(".backup", ".rsc")
+                epath = os.path.join(base_dir, export_file)
+                
+                if not os.path.isfile(bpath) and not os.path.isfile(epath):
+                    return JsonResponse({"success": False, "error": f"Rescue Backup failed to fetch into {base_dir}"})
+                    
+            except Exception as e:
+                return JsonResponse({"success": False, "error": f"Failed to get backup log: {str(e)}"})
                 
             # 2. TRIGGER RESET
             connection, api = _get_mikrotik_api_for_router(router)
@@ -346,7 +370,7 @@ def reset_router(request):
             buffer.seek(0)
             
             response = HttpResponse(buffer.getvalue(), content_type='application/zip')
-            response['Content-Disposition'] = f'attachment; filename="Mikrotik_PreReset_Rescue_{row[1].strftime("%Y%m%d_%H%M")}.zip"'
+            response['Content-Disposition'] = f'attachment; filename="Mikrotik_PreReset_Rescue_{latest_backup.backup_time.strftime("%Y%m%d_%H%M")}.zip"'
             return response
             
         except Exception as e:
@@ -376,6 +400,18 @@ def _gen_password():
 
 def _get_mikrotik_api(router):
     return _get_mikrotik_api_for_router(router)
+
+
+def _remove_voucher_from_mikrotik(hotspot_user, code):
+    try:
+        users = hotspot_user.get(**{'name': code})
+        if users:
+            hotspot_user.remove(id=users[0]['.id'])
+            return True
+    except Exception:
+        pass
+    return False
+
 
 def voucher_page(request):
     """Render halaman manajemen voucher"""
@@ -490,39 +526,32 @@ def delete_vouchers_batch(request):
         codes = codes[:100]  # Batasi 100 per batch
         
         router = _get_active_router(request)
-        conn, api = _get_mikrotik_api_for_router(router)
-        hotspot_user = api.get_resource('/ip/hotspot/user')
+        hotspot_user = None
+        if router:
+            try:
+                conn, api = _get_mikrotik_api_for_router(router)
+                hotspot_user = api.get_resource('/ip/hotspot/user')
+            except Exception:
+                hotspot_user = None
         
         deleted_count = 0
         for code in codes:
-            code_deleted = False
-            # Hapus dari DB terlebih dahulu agar UI langsung sinkron
             try:
                 rows, _ = Voucher.objects.filter(code=code).delete()
                 if rows:
                     deleted_count += rows
-                    code_deleted = True
             except Exception:
                 pass
 
-            # Coba hapus dari MikroTik bila router tersedia
-            try:
-                users = hotspot_user.get(**{'name': code})
-                if users:
-                    hotspot_user.remove(id=users[0]['.id'])
-            except Exception:
-                pass
-
-            # Jika voucher tidak ada di DB tetapi ada di MikroTik, tetap coba hapus user
-            if not code_deleted:
-                try:
-                    users = hotspot_user.get(**{'name': code})
-                    if users:
-                        hotspot_user.remove(id=users[0]['.id'])
-                except Exception:
-                    pass
+            if hotspot_user:
+                _remove_voucher_from_mikrotik(hotspot_user, code)
         
-        conn.disconnect()
+        if router and 'conn' in locals():
+            try:
+                conn.disconnect()
+            except Exception:
+                pass
+
         return JsonResponse({
             'success': True,
             'deleted': deleted_count,
@@ -591,19 +620,16 @@ def delete_voucher(request, code):
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'POST only'})
     try:
-        # Hapus dari MikroTik
         try:
             router = _get_active_router(request)
-            conn, api = _get_mikrotik_api_for_router(router)
-            hotspot_user = api.get_resource('/ip/hotspot/user')
-            users = hotspot_user.get(**{'name': code})
-            if users:
-                hotspot_user.remove(id=users[0]['.id'])
-            conn.disconnect()
+            if router:
+                conn, api = _get_mikrotik_api_for_router(router)
+                hotspot_user = api.get_resource('/ip/hotspot/user')
+                _remove_voucher_from_mikrotik(hotspot_user, code)
+                conn.disconnect()
         except Exception:
             pass
 
-        # Hapus dari DB
         Voucher.objects.filter(code=code).delete()
         return JsonResponse({'success': True})
     except Exception as e:
@@ -746,3 +772,194 @@ def set_active_router(request):
             request.session['active_router_id'] = router_id
             return JsonResponse({'success': True})
         return JsonResponse({'success': False, 'error': 'Router not found'})
+
+def sse_updates(request):
+    """Server-Sent Events endpoint for real-time updates"""
+    def event_stream():
+        last_data = {}
+        
+        while True:
+            try:
+                current_url = request.GET.get('page', 'dashboard')
+                data = {}
+                
+                if current_url == 'dashboard':
+                    # Get router status data
+                    try:
+                        router = _get_active_router(request)
+                        if router:
+                            connection, api = _get_mikrotik_api_for_router(router)
+                            
+                            # System resources
+                            resource = api.get_resource('/system/resource').get()[0]
+                            cpu_load = int(resource.get("cpu-load", 0))
+                            total_mem = int(resource.get("total-memory", 1))
+                            free_mem = int(resource.get("free-memory", 0))
+                            ram_usage = int((1 - (free_mem / total_mem)) * 100)
+                            uptime = resource.get("uptime", "0s")
+                            version = resource.get("version", "Unknown")
+                            board = resource.get("board-name", "Unknown")
+                            
+                            # Interfaces
+                            interfaces_data = []
+                            interface_api = api.get_resource('/interface')
+                            interfaces = interface_api.get()
+                            for iface in interfaces:
+                                if iface.get("type", "") == "ether":
+                                    name = iface.get("name", "Unknown")
+                                    running = iface.get("running", "false")
+                                    status = "UP" if running == "true" else "DOWN"
+                                    tx_byte = int(iface.get("tx-byte", 0))
+                                    rx_byte = int(iface.get("rx-byte", 0))
+                                    
+                                    interfaces_data.append({
+                                        "name": name,
+                                        "status": status,
+                                        "tx_byte": tx_byte,
+                                        "rx_byte": rx_byte,
+                                    })
+                            
+                            # Ping test
+                            internet_status = "DOWN"
+                            ping_latency = "0"
+                            ping_result = api.get_resource('/').call("ping", {
+                                "address": "8.8.8.8",
+                                "count": "1"
+                            })
+                            if ping_result and int(ping_result[0].get("received", 0)) > 0:
+                                internet_status = "UP"
+                                time_val = ping_result[0].get("time", "0ms")
+                                if "ms" in time_val:
+                                    ping_latency = time_val.split("ms")[0]
+                            
+                            # Users count
+                            active_users = 0
+                            hotspot_users = len(api.get_resource('/ip/hotspot/active').get())
+                            ppp_users = len(api.get_resource('/ppp/active').get())
+                            active_users = hotspot_users + ppp_users
+                            
+                            banned_ips = len(api.get_resource('/ip/firewall/address-list').get(**{'list': 'AUTO-BANNED'}))
+                            
+                            # Build alerts
+                            alerts = []
+                            time_now = datetime.now().strftime("%H:%M:%S")
+                            if cpu_load > 80:
+                                alerts.append({"type": "danger", "message": f"🔥 CPU is critically HIGH at {cpu_load}%", "time": time_now})
+                            if ram_usage > 80:
+                                alerts.append({"type": "danger", "message": f"🔥 RAM usage is HIGH at {ram_usage}%", "time": time_now})
+                            if internet_status == "DOWN":
+                                alerts.append({"type": "danger", "message": "🌐 INTERNET CONNECTION DOWN", "time": time_now})
+                            for iface in interfaces_data:
+                                if iface["status"] == "DOWN":
+                                    alerts.append({"type": "warning", "message": f"⚠️ Interface {iface['name']} is DOWN", "time": time_now})
+                                else:
+                                    alerts.append({"type": "success", "message": f"✅ Interface {iface['name']} is UP", "time": time_now})
+                            
+                            if not alerts:
+                                alerts.append({"type": "success", "message": "✅ System is running smoothly", "time": time_now})
+                            
+                            connection.disconnect()
+                            
+                            data = {
+                                "cpu_load": cpu_load,
+                                "ram_usage": ram_usage,
+                                "free_mem_mb": free_mem // (1024 * 1024),
+                                "total_mem_mb": total_mem // (1024 * 1024),
+                                "uptime": uptime,
+                                "version": version,
+                                "board": board,
+                                "internet_status": internet_status,
+                                "ping_latency": ping_latency,
+                                "active_users": active_users,
+                                "banned_ips": banned_ips,
+                                "interfaces": interfaces_data,
+                                "alerts": alerts,
+                                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            }
+                    except Exception as e:
+                        data = {"error": str(e)}
+                        
+                elif current_url == 'voucher':
+                    # Get voucher data
+                    try:
+                        active_codes = set()
+                        router = _get_active_router(request)
+                        if router:
+                            conn, api = _get_mikrotik_api_for_router(router)
+                            active_sessions = api.get_resource('/ip/hotspot/active').get()
+                            for s in active_sessions:
+                                active_codes.add(s.get('user', ''))
+                            conn.disconnect()
+                        
+                        vouchers = Voucher.objects.all()[:200]
+                        voucher_data = []
+                        for v in vouchers:
+                            online = v.code in active_codes
+                            expired = False
+                            if v.expires_at:
+                                expired = timezone.now() >= v.expires_at
+                            
+                            if v.duration_label:
+                                profile_label = v.duration_label
+                            else:
+                                profile_label = PROFILE_DURATION.get(v.profile, {}).get('label')
+                                if not profile_label:
+                                    if v.profile == 'custom':
+                                        profile_label = f'Custom {v.duration_hours} Jam'
+                                    else:
+                                        profile_label = v.profile
+                            
+                            voucher_data.append({
+                                'id': v.id,
+                                'code': v.code,
+                                'password': v.password,
+                                'profile': v.profile,
+                                'profile_label': profile_label,
+                                'duration_hours': v.duration_hours,
+                                'price': v.price,
+                                'is_used': v.is_used,
+                                'online': online,
+                                'expired': expired,
+                                'expires_at': v.expires_at.strftime('%Y-%m-%d %H:%M') if v.expires_at else None,
+                                'batch': v.batch,
+                                'created_at': v.created_at.strftime('%Y-%m-%d %H:%M'),
+                                'used_at': v.used_at.strftime('%Y-%m-%d %H:%M') if v.used_at else None,
+                            })
+                        
+                        data = {"vouchers": voucher_data}
+                    except Exception as e:
+                        data = {"error": str(e)}
+                        
+                elif current_url == 'settings':
+                    # Get router list
+                    try:
+                        routers = Router.objects.all()
+                        active_id = request.session.get('active_router_id')
+                        
+                        router_data = [{
+                            'id': r.id,
+                            'name': r.name,
+                            'ip_address': r.ip_address,
+                            'username': r.username,
+                            'port': r.port
+                        } for r in routers]
+                        
+                        data = {"routers": router_data, "active_id": active_id}
+                    except Exception as e:
+                        data = {"error": str(e)}
+                
+                # Only send if data has changed
+                if data != last_data:
+                    last_data = data.copy()
+                    yield f"data: {json.dumps(data)}\n\n"
+                
+                time.sleep(1)  # Check every second
+                
+            except Exception as e:
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                time.sleep(5)  # Wait longer on error
+    
+    response = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
+    response['Cache-Control'] = 'no-cache'
+    response['Connection'] = 'keep-alive'
+    return response

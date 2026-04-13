@@ -26,4 +26,7 @@ urlpatterns = [
     path('api/add_router', views.add_router, name='add_router'),
     path('api/delete_router/<int:id>', views.delete_router, name='delete_router'),
     path('api/set_active_router', views.set_active_router, name='set_active_router'),
+    
+    # Real-time updates
+    path('api/sse', views.sse_updates, name='sse_updates'),
 ]

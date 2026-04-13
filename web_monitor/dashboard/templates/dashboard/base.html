@@ -484,6 +484,88 @@
         loadGlobalRouters();
     </script>
     
+    <script>
+        // Real-time updates using Server-Sent Events
+        let eventSource = null;
+        
+        function startRealTimeUpdates() {
+            if (eventSource) {
+                eventSource.close();
+            }
+            
+            // Determine which page we're on
+            const currentPath = window.location.pathname;
+            let pageType = 'dashboard';
+            
+            if (currentPath.includes('/voucher/')) {
+                pageType = 'voucher';
+            } else if (currentPath.includes('/settings/')) {
+                pageType = 'settings';
+            } else if (currentPath.includes('/active-users/')) {
+                pageType = 'active_users';
+            }
+            
+            // Create EventSource connection
+            eventSource = new EventSource(`/api/sse?page=${pageType}`);
+            
+            eventSource.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    
+                    if (data.error) {
+                        console.error('SSE Error:', data.error);
+                        return;
+                    }
+                    
+                    // Update based on page type
+                    if (pageType === 'dashboard' && typeof updateDashboard === 'function') {
+                        updateDashboard(data);
+                    } else if (pageType === 'voucher' && typeof updateVouchers === 'function') {
+                        updateVouchers(data);
+                    } else if (pageType === 'settings' && typeof updateRouters === 'function') {
+                        updateRouters(data);
+                    }
+                    
+                } catch (e) {
+                    console.error('Error parsing SSE data:', e);
+                }
+            };
+            
+            eventSource.onerror = function(event) {
+                console.error('SSE connection error:', event);
+                // Try to reconnect after 5 seconds
+                setTimeout(startRealTimeUpdates, 5000);
+            };
+            
+            eventSource.onopen = function() {
+                console.log(`Real-time updates connected for ${pageType}`);
+            };
+        }
+        
+        function stopRealTimeUpdates() {
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+                console.log('Real-time updates stopped');
+            }
+        }
+        
+        // Start real-time updates when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            startRealTimeUpdates();
+        });
+        
+        // Restart on window focus
+        window.addEventListener('focus', function() {
+            startRealTimeUpdates();
+        });
+        
+        // Stop on window blur (optional)
+        // window.addEventListener('blur', function() {
+        //     stopRealTimeUpdates();
+        // });
+    </script>
+    
     {% block scripts %}{% endblock %}
 </body>
 </html>

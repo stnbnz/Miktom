@@ -391,11 +391,8 @@ const UPDATE_INTERVAL = 3000;
             });
         }
 
-        async function fetchStatus() {
+        function updateDashboard(data) {
             try {
-                const res = await fetch('/api/router_status');
-                const data = await res.json();
-
                 if (isFirstLoad) {
                     document.getElementById('loader').style.opacity = '0';
                     setTimeout(() => document.getElementById('loader').style.display = 'none', 500);
@@ -404,8 +401,8 @@ const UPDATE_INTERVAL = 3000;
                     fetchBackupLogs();
                 }
 
-                if (!data.success) {
-                    showError(data.error || "Failed to fetch data from API");
+                if (data.error) {
+                    showError(data.error);
                     return;
                 }
 
@@ -417,7 +414,7 @@ const UPDATE_INTERVAL = 3000;
                 document.getElementById('r-uptime').textContent = data.uptime;
                 document.getElementById('r-version').textContent = data.version;
 
-                // Update CPU CPU
+                // Update CPU
                 document.getElementById('cpu-val').textContent = data.cpu_load;
                 updateProgressBar('cpu-bar', data.cpu_load);
 
@@ -682,6 +679,6 @@ const UPDATE_INTERVAL = 3000;
 
         // Cycle
         fetchStatus();
-        setInterval(fetchStatus, UPDATE_INTERVAL);
+        // Auto-refresh is now handled by base.html
 </script>
 {% endblock %}

@@ -161,6 +161,48 @@
         }
     }
 
+    function updateRouters(data) {
+        try {
+            if (data.error) {
+                document.getElementById('router-list').innerHTML = '<div style="color: var(--danger); font-size: 14px;">Error: ' + data.error + '</div>';
+                return;
+            }
+            
+            if (data.routers) {
+                const container = document.getElementById('router-list');
+                container.innerHTML = '';
+                
+                if (data.routers.length > 0) {
+                    data.routers.forEach(r => {
+                        const isActive = r.id === data.active_id;
+                        const borderCol = isActive ? 'rgba(6, 182, 212, 0.5)' : 'rgba(255,255,255,0.05)';
+                        const bg = isActive ? 'rgba(6, 182, 212, 0.05)' : 'rgba(0,0,0,0.2)';
+                        
+                        const html = `
+                        <div style="background: ${bg}; border: 1px solid ${borderCol}; padding: 15px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; transition: all 0.3s;">
+                            <div>
+                                <div style="font-weight: 600; color: white; font-size: 15px; display:flex; align-items:center; gap:8px;">
+                                    ${r.name}
+                                    ${isActive ? '<span style="background: rgba(0,230,118,0.2); color: var(--success); padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: bold;">ACTIVE</span>' : ''}
+                                </div>
+                                <div style="color: var(--text-muted); font-size: 13px; font-family: monospace; margin-top: 5px;">${r.ip_address}:${r.port} | User: ${r.username}</div>
+                            </div>
+                            <div style="display: flex; gap: 10px;">
+                                ${!isActive ? `<button onclick="changeGlobalRouter(${r.id})" style="background: rgba(255,255,255,0.1); border: none; color: white; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px;">Switch</button>` : ''}
+                                <button onclick="removeRouter(${r.id})" style="background: rgba(255,82,82,0.1); border: 1px solid rgba(255,82,82,0.2); color: var(--danger); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px;">Delete</button>
+                            </div>
+                        </div>`;
+                        container.innerHTML += html;
+                    });
+                } else {
+                    container.innerHTML = '<div style="color: var(--text-muted); font-size: 14px;">No routers configured.</div>';
+                }
+            }
+        } catch(e) {
+            document.getElementById('router-list').innerHTML = '<div style="color: var(--danger); font-size: 14px;">Error updating routers.</div>';
+        }
+    }
+
     fetchRoutersList();
 </script>
 {% endblock %}
