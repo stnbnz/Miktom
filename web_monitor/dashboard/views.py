@@ -20,6 +20,7 @@ last_internet_status = "UP"
 last_interface_status = {}
 from django.shortcuts import render
 from django.http import JsonResponse
+from django.utils import timezone
 from datetime import datetime
 
 from .models import Voucher, Router
@@ -390,14 +391,32 @@ def generate_vouchers(request):
         profile  = data.get('profile', '1jam')
         quantity = int(data.get('quantity', 1))
         custom_price = data.get('price', None)
+        custom_duration = data.get('duration_hours', None)
 
         quantity = max(1, min(quantity, 100))  # Batasi 1-100
-        if profile not in PROFILE_DURATION:
-            return JsonResponse({'success': False, 'error': 'Profile tidak valid'})
 
-        info      = PROFILE_DURATION[profile]
-        hours     = info['hours']
-        price     = int(custom_price) if custom_price is not None else info['price']
+        custom_hours = None
+        if custom_duration not in [None, '']:
+            try:
+                custom_hours = int(custom_duration)
+            except ValueError:
+                return JsonResponse({'success': False, 'error': 'Custom duration harus berupa angka'})
+            if custom_hours <= 0:
+                return JsonResponse({'success': False, 'error': 'Custom duration harus lebih besar dari 0'})
+
+        if custom_hours is not None:
+            hours = custom_hours
+            profile = 'custom'
+            price = int(custom_price) if custom_price is not None else 0
+            comment_label = f'Custom {hours} Jam'
+        else:
+            if profile not in PROFILE_DURATION:
+                return JsonResponse({'success': False, 'error': 'Profile tidak valid'})
+            info = PROFILE_DURATION[profile]
+            hours = info['hours']
+            price = int(custom_price) if custom_price is not None else info['price']
+            comment_label = info['label']
+
         batch_id  = uuid.uuid4().hex[:8].upper()
 
         router = _get_active_router(request)
@@ -415,7 +434,7 @@ def generate_vouchers(request):
                 'name':    code,
                 'password': code,
                 'profile': 'default',
-                'comment': f'Voucher {info["label"]} - Batch {batch_id}',
+                'comment': f'Voucher {comment_label} - Batch {batch_id}',
                 'limit-uptime': f'{hours}h',
             })
 
@@ -457,15 +476,26 @@ def get_vouchers(request):
         data = []
         for v in vouchers:
             online = v.code in active_codes
+            expired = False
+            if v.expires_at:
+                expired = timezone.now() >= v.expires_at
+            profile_label = PROFILE_DURATION.get(v.profile, {}).get('label')
+            if not profile_label:
+                if v.profile == 'custom':
+                    profile_label = f'Custom {v.duration_hours} Jam'
+                else:
+                    profile_label = v.profile
             data.append({
                 'id':             v.id,
                 'code':           v.code,
                 'profile':        v.profile,
-                'profile_label':  PROFILE_DURATION.get(v.profile, {}).get('label', v.profile),
+                'profile_label':  profile_label,
                 'duration_hours': v.duration_hours,
                 'price':          v.price,
                 'is_used':        v.is_used,
                 'online':         online,
+                'expired':        expired,
+                'expires_at':     v.expires_at.strftime('%Y-%m-%d %H:%M') if v.expires_at else None,
                 'batch':          v.batch,
                 'created_at':     v.created_at.strftime('%Y-%m-%d %H:%M'),
                 'used_at':        v.used_at.strftime('%Y-%m-%d %H:%M') if v.used_at else None,

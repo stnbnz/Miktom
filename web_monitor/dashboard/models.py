@@ -1,4 +1,5 @@
 from django.db import models
+from django.utils import timezone
 
 PROFILE_CHOICES = [
     ('1jam',    '1 Jam'),
@@ -23,6 +24,19 @@ class Voucher(models.Model):
 
     def __str__(self):
         return f"{self.code} ({self.profile})"
+
+    @property
+    def expired(self):
+        return bool(self.expires_at and timezone.now() >= self.expires_at)
+
+    def mark_used(self):
+        if not self.is_used:
+            now = timezone.now()
+            self.is_used = True
+            self.used_at = now
+            if not self.expires_at:
+                self.expires_at = now + timedelta(hours=self.duration_hours)
+            self.save()
 
 class Router(models.Model):
     name = models.CharField(max_length=50)

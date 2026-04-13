@@ -129,6 +129,7 @@
     .b-avail { background: rgba(0,230,118,0.15); color: var(--success); }
     .b-used { background: rgba(255,183,77,0.15); color: var(--warning); }
     .b-online { background: rgba(0,240,255,0.15); color: var(--accent-secondary); }
+    .b-expired { background: rgba(255,82,82,0.12); color: var(--danger); }
 
     .table-container {
         overflow-x: auto;
@@ -201,6 +202,10 @@
         <div class="val" id="stat-used" style="color:var(--warning);">0</div>
     </div>
     <div class="kpi-card">
+        <div class="lbl">Expired</div>
+        <div class="val" id="stat-expired" style="color:var(--danger);">0</div>
+    </div>
+    <div class="kpi-card">
         <div class="lbl">Online NOW</div>
         <div class="val" id="stat-online" style="color:var(--accent-secondary);">0</div>
     </div>
@@ -232,6 +237,10 @@
             <input type="number" id="gen-qty" class="form-control" value="10" min="1" max="100">
         </div>
         <div class="form-group">
+            <label>Custom Duration (Jam) - Optional</label>
+            <input type="number" id="gen-duration" class="form-control" placeholder="e.g. 5" min="1" max="168">
+        </div>
+        <div class="form-group">
             <label>Custom Price (Optional, override profile)</label>
             <input type="number" id="gen-price" class="form-control" placeholder="e.g. 5000">
         </div>
@@ -255,12 +264,13 @@
                 <th>Profile</th>
                 <th>Price</th>
                 <th>Status</th>
+                <th>Expires</th>
                 <th>Created</th>
                 <th>Actions</th>
             </tr>
         </thead>
         <tbody id="v-tbody">
-            <tr><td colspan="7" style="text-align:center; color:var(--text-muted);">Loading Vouchers...</td></tr>
+            <tr><td colspan="8" style="text-align:center; color:var(--text-muted);">Loading Vouchers...</td></tr>
         </tbody>
     </table>
 </div>
@@ -328,10 +338,11 @@
         const srch = document.getElementById('search-input').value.toLowerCase();
         let f = v_list.filter(v => v.code.toLowerCase().includes(srch) || v.batch.toLowerCase().includes(srch));
         
-        let t=0, a=0, u=0, onl=0;
+let t=0, a=0, u=0, onl=0, exp=0;
         v_list.forEach(v => {
             t++;
-            if(v.online) onl++;
+            if(v.expired) exp++;
+            else if(v.online) onl++;
             else if(v.is_used) u++;
             else a++;
         });
@@ -339,14 +350,16 @@
         document.getElementById('stat-total').innerText = t;
         document.getElementById('stat-avail').innerText = a;
         document.getElementById('stat-used').innerText = u;
+        document.getElementById('stat-expired').innerText = exp;
         document.getElementById('stat-online').innerText = onl;
 
         const tb = document.getElementById('v-tbody');
-        if(!f.length) { tb.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#a0a5b1;">No vouchers found.</td></tr>'; return; }
+        if(!f.length) { tb.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#a0a5b1;">No vouchers found.</td></tr>'; return; }
 
         tb.innerHTML = f.map(v => {
             let b = `<span class="badge b-avail">Available</span>`;
-            if(v.online) b = `<span class="badge b-online">Online</span>`;
+            if(v.expired) b = `<span class="badge b-expired">Expired</span>`;
+            else if(v.online) b = `<span class="badge b-online">Online</span>`;
             else if(v.is_used) b = `<span class="badge b-used">Used</span>`;
             
             return `<tr>
@@ -355,6 +368,7 @@
                 <td>${v.profile_label}</td>
                 <td>Rp ${v.price.toLocaleString()}</td>
                 <td>${b}</td>
+                <td>${v.expires_at || '-'}</td>
                 <td>${v.created_at}</td>
                 <td><button class="del-btn" onclick="openDel('${v.code}')">Delete</button></td>
             </tr>`;
@@ -375,10 +389,11 @@
         document.getElementById('gen-lbl').innerText = 'Generating...';
 
         try {
-            const res = await fetch('/api/voucher/generate', {
+            const dur = document.getElementById('gen-duration').value;
+        const res = await fetch('/api/voucher/generate', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ profile: sel_prof, quantity: qty, price: prc ? parseInt(prc) : null })
+                body: JSON.stringify({ profile: sel_prof, quantity: qty, duration_hours: dur ? parseInt(dur) : null, price: prc ? parseInt(prc) : null })
             });
             const dat = await res.json();
             if(dat.success) {
