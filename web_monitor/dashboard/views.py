@@ -367,10 +367,12 @@ PROFILE_DURATION = {
 }
 
 def _gen_code():
-    """Generate kode voucher unik format XXXX-XXXXX"""
-    prefix = ''.join(random.choices(string.ascii_uppercase, k=4))
-    suffix = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
-    return f"{prefix}-{suffix}"
+    """Generate kode voucher unik format 12 karakter alfanumerik random"""
+    return ''.join(random.choices(string.ascii_uppercase + string.ascii_lowercase + string.digits, k=12))
+
+def _gen_password():
+    """Generate password random yang berbeda dari code"""
+    return ''.join(random.choices(string.ascii_uppercase + string.ascii_lowercase + string.digits, k=12))
 
 def _get_mikrotik_api(router):
     return _get_mikrotik_api_for_router(router)
@@ -441,11 +443,13 @@ def generate_vouchers(request):
             code = _gen_code()
             while Voucher.objects.filter(code=code).exists():
                 code = _gen_code()
+            
+            password = _gen_password()
 
             # Push ke MikroTik sebagai Hotspot User
             hotspot_user.add(**{
                 'name':    code,
-                'password': code,
+                'password': password,
                 'profile': 'default',
                 'comment': f'Voucher {duration_label} - Batch {batch_id}',
                 'limit-uptime': f'{hours}h',
@@ -453,6 +457,7 @@ def generate_vouchers(request):
 
             Voucher.objects.create(
                 code=code,
+                password=password,
                 profile=profile,
                 duration_hours=hours,
                 duration_label=duration_label,
@@ -467,6 +472,46 @@ def generate_vouchers(request):
             'batch': batch_id,
             'codes': created_codes,
             'count': len(created_codes),
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+@csrf_exempt
+def delete_vouchers_batch(request):
+    """Hapus multiple voucher dari MikroTik dan DB"""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST only'})
+    try:
+        data = json_lib.loads(request.body)
+        codes = data.get('codes', [])
+        if not codes or not isinstance(codes, list):
+            return JsonResponse({'success': False, 'error': 'codes harus berupa array'})
+        
+        codes = codes[:100]  # Batasi 100 per batch
+        
+        router = _get_active_router(request)
+        conn, api = _get_mikrotik_api_for_router(router)
+        hotspot_user = api.get_resource('/ip/hotspot/user')
+        
+        deleted_count = 0
+        for code in codes:
+            try:
+                # Hapus dari MikroTik
+                users = hotspot_user.get(**{'name': code})
+                if users:
+                    hotspot_user.remove(id=users[0]['.id'])
+                
+                # Hapus dari DB
+                Voucher.objects.filter(code=code).delete()
+                deleted_count += 1
+            except Exception as e:
+                pass
+        
+        conn.disconnect()
+        return JsonResponse({
+            'success': True,
+            'deleted': deleted_count,
+            'total': len(codes)
         })
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
@@ -508,6 +553,7 @@ def get_vouchers(request):
             data.append({
                 'id':             v.id,
                 'code':           v.code,
+                'password':       v.password,
                 'profile':        v.profile,
                 'profile_label':  profile_label,
                 'duration_hours': v.duration_hours,

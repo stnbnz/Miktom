@@ -185,6 +185,10 @@
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
             Print Selected
         </button>
+        <button class="btn-backup" style="background: rgba(255,82,82,0.15); color: var(--danger); box-shadow:none; border:1px solid rgba(255,82,82,0.3);" onclick="deleteSelected()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+            Delete Selected
+        </button>
     </div>
 </div>
 
@@ -447,8 +451,10 @@ let t=0, a=0, u=0, onl=0, exp=0;
     }
 
     function openDetail(c) {
-        document.getElementById('det-user').innerText = c;
-        document.getElementById('det-pass').innerText = c;
+        const v = v_list.find(x => x.code === c);
+        if (!v) return;
+        document.getElementById('det-user').innerText = v.code;
+        document.getElementById('det-pass').innerText = v.password || v.code;
         const m = document.getElementById('detail-modal');
         m.style.display = 'flex';
         setTimeout(() => {
@@ -475,6 +481,34 @@ let t=0, a=0, u=0, onl=0, exp=0;
         let u = '/voucher/print';
         if(c.length) u += '?codes=' + c.join(',');
         window.open(u, '_blank');
+    }
+
+    async function deleteSelected() {
+        const c = Array.from(document.querySelectorAll('.row-chk:checked')).map(x => x.value);
+        if(!c.length) {
+            showToast('Select at least 1 voucher', 'error');
+            return;
+        }
+        
+        if(!confirm(`Delete ${c.length} voucher(s)? This action cannot be undone.`)) return;
+        
+        try {
+            const res = await fetch('/api/voucher/delete_batch', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ codes: c })
+            });
+            const dat = await res.json();
+            if(dat.success) {
+                showToast(`Deleted ${dat.deleted}/${dat.total} vouchers`);
+                loadVouchers();
+                document.querySelectorAll('.row-chk').forEach(x => x.checked = false);
+            } else {
+                showToast(dat.error, 'error');
+            }
+        } catch(e) {
+            showToast('Delete failed', 'error');
+        }
     }
 
     loadVouchers();

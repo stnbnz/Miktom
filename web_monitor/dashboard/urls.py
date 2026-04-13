@@ -16,6 +16,7 @@ urlpatterns = [
     path('api/voucher/generate', views.generate_vouchers, name='generate_vouchers'),
     path('api/voucher/list', views.get_vouchers, name='get_vouchers'),
     path('api/voucher/delete/<str:code>', views.delete_voucher, name='delete_voucher'),
+    path('api/voucher/delete_batch', views.delete_vouchers_batch, name='delete_vouchers_batch'),
     path('voucher/print', views.print_vouchers, name='print_vouchers'),
     path('api/active_users_data', views.active_users_data, name='active_users_data'),
     path('api/kick_user', views.kick_hotspot_user, name='kick_hotspot_user'),
