@@ -236,9 +236,18 @@
             <label>Quantity</label>
             <input type="number" id="gen-qty" class="form-control" value="10" min="1" max="100">
         </div>
-        <div class="form-group">
-            <label>Custom Duration (Jam) - Optional</label>
-            <input type="number" id="gen-duration" class="form-control" placeholder="e.g. 5" min="1" max="168">
+        <div style="display:grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-bottom: 20px;">
+            <div class="form-group">
+                <label>Custom Duration - Optional</label>
+                <input type="number" id="gen-duration" class="form-control" placeholder="e.g. 5" min="1" max="744">
+            </div>
+            <div class="form-group">
+                <label>Unit</label>
+                <select id="gen-unit" class="form-control" style="padding: 12px 15px;">
+                    <option value="hour">Jam</option>
+                    <option value="minute">Menit</option>
+                </select>
+            </div>
         </div>
         <div class="form-group">
             <label>Custom Price (Optional, override profile)</label>
@@ -390,10 +399,11 @@ let t=0, a=0, u=0, onl=0, exp=0;
 
         try {
             const dur = document.getElementById('gen-duration').value;
+        const unit = document.getElementById('gen-unit').value;
         const res = await fetch('/api/voucher/generate', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ profile: sel_prof, quantity: qty, duration_hours: dur ? parseInt(dur) : null, price: prc ? parseInt(prc) : null })
+                body: JSON.stringify({ profile: sel_prof, quantity: qty, duration_hours: dur ? parseInt(dur) : null, duration_unit: unit, price: prc ? parseInt(prc) : null })
             });
             const dat = await res.json();
             if(dat.success) {

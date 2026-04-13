@@ -392,23 +392,36 @@ def generate_vouchers(request):
         quantity = int(data.get('quantity', 1))
         custom_price = data.get('price', None)
         custom_duration = data.get('duration_hours', None)
+        duration_unit = data.get('duration_unit', 'hour')
 
-        quantity = max(1, min(quantity, 100))  # Batasi 1-100
+        quantity = max(1, min(quantity, 100))
 
         custom_hours = None
         if custom_duration not in [None, '']:
             try:
-                custom_hours = int(custom_duration)
+                custom_value = int(custom_duration)
             except ValueError:
-                return JsonResponse({'success': False, 'error': 'Custom duration harus berupa angka'})
-            if custom_hours <= 0:
-                return JsonResponse({'success': False, 'error': 'Custom duration harus lebih besar dari 0'})
+                return JsonResponse({'success': False, 'error': 'Duration harus berupa angka'})
+            if custom_value <= 0:
+                return JsonResponse({'success': False, 'error': 'Duration harus lebih besar dari 0'})
+            
+            if duration_unit == 'minute':
+                custom_hours = custom_value / 60.0
+                if custom_hours > 744:  # Max 31 hari
+                    return JsonResponse({'success': False, 'error': 'Duration tidak boleh lebih dari 31 hari (744 jam)'})
+            else:
+                custom_hours = custom_value
+                if custom_hours > 744:
+                    return JsonResponse({'success': False, 'error': 'Duration tidak boleh lebih dari 31 hari'})
 
         if custom_hours is not None:
             hours = custom_hours
             profile = 'custom'
             price = int(custom_price) if custom_price is not None else 0
-            comment_label = f'Custom {hours} Jam'
+            if duration_unit == 'minute':
+                comment_label = f'Custom {int(custom_duration)} Menit'
+            else:
+                comment_label = f'Custom {int(custom_duration)} Jam'
         else:
             if profile not in PROFILE_DURATION:
                 return JsonResponse({'success': False, 'error': 'Profile tidak valid'})
