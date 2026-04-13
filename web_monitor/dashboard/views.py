@@ -495,17 +495,32 @@ def delete_vouchers_batch(request):
         
         deleted_count = 0
         for code in codes:
+            code_deleted = False
+            # Hapus dari DB terlebih dahulu agar UI langsung sinkron
             try:
-                # Hapus dari MikroTik
+                rows, _ = Voucher.objects.filter(code=code).delete()
+                if rows:
+                    deleted_count += rows
+                    code_deleted = True
+            except Exception:
+                pass
+
+            # Coba hapus dari MikroTik bila router tersedia
+            try:
                 users = hotspot_user.get(**{'name': code})
                 if users:
                     hotspot_user.remove(id=users[0]['.id'])
-                
-                # Hapus dari DB
-                Voucher.objects.filter(code=code).delete()
-                deleted_count += 1
-            except Exception as e:
+            except Exception:
                 pass
+
+            # Jika voucher tidak ada di DB tetapi ada di MikroTik, tetap coba hapus user
+            if not code_deleted:
+                try:
+                    users = hotspot_user.get(**{'name': code})
+                    if users:
+                        hotspot_user.remove(id=users[0]['.id'])
+                except Exception:
+                    pass
         
         conn.disconnect()
         return JsonResponse({
