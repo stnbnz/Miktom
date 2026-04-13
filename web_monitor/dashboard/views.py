@@ -206,7 +206,7 @@ def trigger_backup(request):
             return JsonResponse({"success": False, "error": "No router configured."})
             
         script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "backup.py")
-        python_exe = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "venv", "Scripts", "python.exe")
+        python_exe = sys.executable
         
         # Block until backup.py finishes
         subprocess.run([python_exe, script_path, router.ip_address, router.username, router.password], cwd=os.path.dirname(script_path), capture_output=True)
@@ -304,7 +304,7 @@ def reset_router(request):
             
             # 1. TRIGGER BACKUP FIRST
             script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "backup.py")
-            python_exe = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "venv", "Scripts", "python.exe")
+            python_exe = sys.executable
             
             subprocess.run([python_exe, script_path, router.ip_address, router.username, router.password], cwd=os.path.dirname(script_path), capture_output=True)
             
