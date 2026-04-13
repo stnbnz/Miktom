@@ -1,16 +1,30 @@
 import routeros_api
-import subprocess
+import sys
 import os
+import django
 import re
 from datetime import datetime
+
+# Setup Django environment
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'web_monitor.settings')
+django.setup()
+
+from web_monitor.dashboard.models import Router, SecurityEvent, ActivityLog
+from alert import send_telegram
 
 # ======================
 # ROUTER CONFIG
 # ======================
 
-ROUTER_IP = "192.168.88.1"
-USERNAME = "admin"
-PASSWORD = "1945"
+router = Router.objects.filter(is_active=True).first()
+if not router:
+    print("Error: No active router in database.")
+    sys.exit(1)
+
+ROUTER_IP = router.ip_address
+USERNAME = router.username
+PASSWORD = router.password
 
 # ======================
 # SECURITY CONFIG
@@ -22,6 +36,7 @@ MAX_FAILURES = 5
 print("================================")
 print(" MikroTik Security Shield")
 print(" Time:", datetime.now())
+print(f" Router: {router.name} ({ROUTER_IP})")
 print("================================")
 
 try:
@@ -40,26 +55,25 @@ try:
 
     failure_counts = {}
     
-    # We look for typical MikroTik login failure messages:
-    # "login failure for user admin from 192.168.88.254 via ssh"
     for log in logs:
         msg = log.get('message', '')
         if 'login failure' in msg:
-            # Extract IP using regex
             match = re.search(r'from (\d+\.\d+\.\d+\.\d+)', msg)
             if match:
                 ip = match.group(1)
                 failure_counts[ip] = failure_counts.get(ip, 0) + 1
 
-    # 2. Get current banned IPs to avoid duplicate bans
-    fw_address_list_api = api.get_resource('/ip/firewall/address-list')
-    current_bans = fw_address_list_api.get(list=BAN_LIST_NAME)
+    # 2. Get current banned IPs from database
+    current_bans = SecurityEvent.objects.filter(
+        router=router,
+        action='banned'
+    ).values_list('ip_address', flat=True).distinct()
     
-    banned_ips = [b['address'] for b in current_bans]
-    
+    banned_ips = list(current_bans)
     new_bans = []
 
     # 3. Ban IPs exceeding threshold
+    fw_address_list_api = api.get_resource('/ip/firewall/address-list')
     for ip, count in failure_counts.items():
         if count >= MAX_FAILURES and ip not in banned_ips:
             try:
@@ -67,14 +81,23 @@ try:
                     list=BAN_LIST_NAME,
                     address=ip,
                     comment=f"Auto-banned by Security Shield ({count} failed logins)",
-                    timeout="1d" # Ban for 1 day
+                    timeout="1d"
                 )
                 print(f"[!] Banning IP: {ip} (Failed attempts: {count})")
                 new_bans.append(ip)
+                
+                # Log security event
+                SecurityEvent.objects.create(
+                    router=router,
+                    ip_address=ip,
+                    failure_count=count,
+                    action='banned',
+                    ban_duration='1d'
+                )
             except Exception as e:
                 print(f"Failed to ban IP {ip}: {e}")
 
-    # 4. Ensure we have a Drop rule for our Address List
+    # 4. Ensure Drop rule exists
     fw_filter_api = api.get_resource('/ip/firewall/filter')
     filters = fw_filter_api.get()
     
@@ -96,21 +119,32 @@ try:
 
     # 5. Send Alert if new IPs were banned
     if new_bans:
-        alert_msg = "🛡️ *SECURITY SHIELD ACTIVATED*\n\n"
-        alert_msg += "The following IPs have been automatically BANNED for 1 day due to multiple login failures:\n"
+        alert_msg = f"🛡️ *SECURITY SHIELD ACTIVATED*\n\nThe following {len(new_bans)} IPs have been banned for 1 day:\n"
         for ip in new_bans:
             alert_msg += f"🚫 {ip}\n"
         
-        print("\nSending WhatsApp Alert...")
-        subprocess.run([
-            "python3",
-            "alert.py",
-            alert_msg
-        ])
+        print("\nSending alert...")
+        send_telegram(alert_msg)
+        
+        ActivityLog.objects.create(
+            router=router,
+            activity_type='security_ban',
+            description=f'Security Shield: {len(new_bans)} IPs banned',
+            metadata={'banned_ips': new_bans},
+            success=True
+        )
     else:
         print("No new brute-force attacks detected.")
 
-except Exception as e:
-    print("Error:", e)
+    print("Security Shield completed successfully")
 
-print("Security Shield completed.")
+except Exception as e:
+    print(f"Error: {e}")
+    ActivityLog.objects.create(
+        router=router,
+        activity_type='security_ban',
+        description='Security Shield check failed',
+        metadata={'error': str(e)},
+        success=False,
+        error_message=str(e)
+    )

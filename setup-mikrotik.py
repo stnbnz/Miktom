@@ -1,18 +1,45 @@
 import routeros_api
+import sys
+import os
+import django
 import time
 from datetime import datetime
 
-# ======================
-# ROUTER CONFIG
-# ======================
-ROUTER_IP = "192.168.88.1"
-USERNAME = "admin"
-PASSWORD = "1945"
+# Setup Django environment
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'web_monitor.settings')
+django.setup()
+
+from web_monitor.dashboard.models import Router, ActivityLog
 
 print("================================")
 print(" MikroTik Auto-Setup Wizard")
 print(" Time:", datetime.now())
 print("================================")
+
+# ======================
+# ROUTER CONFIG
+# ======================
+
+if len(sys.argv) >= 4:
+    ROUTER_IP = sys.argv[1]
+    USERNAME = sys.argv[2]
+    PASSWORD = sys.argv[3]
+    router, _ = Router.objects.get_or_create(
+        ip_address=ROUTER_IP,
+        defaults={'name': f'Router_{ROUTER_IP}', 'username': USERNAME, 'password': PASSWORD}
+    )
+else:
+    router = Router.objects.filter(is_active=True).first()
+    if not router:
+        print("Error: No active router in database.")
+        print("Usage: python setup-mikrotik.py <IP> <USERNAME> <PASSWORD>")
+        sys.exit(1)
+    ROUTER_IP = router.ip_address
+    USERNAME = router.username
+    PASSWORD = router.password
+
+print(f"Configuring router: {router.name} ({ROUTER_IP})")
 
 try:
     connection = routeros_api.RouterOsApiPool(
@@ -228,7 +255,22 @@ try:
 
     connection.disconnect()
     
-    print("\n✅ Setup Complete! MikroTik is ready for the overpowered scripts.")
+    ActivityLog.objects.create(
+        router=router,
+        activity_type='system_reboot',
+        description='MikroTik auto-setup wizard completed',
+        success=True
+    )
+    
+    print("\n✅ Setup Complete! MikroTik is ready.")
 
 except Exception as e:
     print(f"Error during setup: {e}")
+    ActivityLog.objects.create(
+        router=router,
+        activity_type='system_reboot',
+        description='MikroTik auto-setup wizard failed',
+        metadata={'error': str(e)},
+        success=False,
+        error_message=str(e)
+    )

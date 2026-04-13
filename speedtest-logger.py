@@ -2,8 +2,16 @@ import subprocess
 import json
 import os
 import sys
-import mysql.connector
+import django
 from datetime import datetime
+
+# Setup Django environment
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'web_monitor.settings')
+django.setup()
+
+from web_monitor.dashboard.models import SpeedtestLog
+from alert import send_telegram
 
 # ======================
 # SLA CONFIGURATION
@@ -11,14 +19,6 @@ from datetime import datetime
 SLA_DOWNLOAD_MIN_MBPS = 20.0  # Alert if download speed under 20 Mbps
 SLA_UPLOAD_MIN_MBPS = 10.0    # Alert if upload speed under 10 Mbps
 SLA_MAX_PING = 100            # Alert if ping is over 100ms
-
-# ==========================
-# MYSQL CONFIG
-# ==========================
-DB_HOST = "127.0.0.1"
-DB_USER = "root"
-DB_PASS = ""
-DB_NAME = "mikrotik_automation"
 
 print("================================")
 print(" MikroTik Speedtest & SLA Logger")
@@ -53,31 +53,16 @@ try:
     print(f"Upload   : {upload_mbps:.2f} Mbps")
     
     # ==========================
-    # LOG TO MYSQL
+    # LOG TO DJANGO DATABASE
     # ==========================
     try:
-        db = mysql.connector.connect(
-            host=DB_HOST,
-            user=DB_USER,
-            password=DB_PASS,
-            database=DB_NAME
+        SpeedtestLog.objects.create(
+            test_time=datetime.now(),
+            ping=ping_ms,
+            download=download_mbps,
+            upload=upload_mbps,
+            server_name='speedtest-cli'
         )
-        cursor = db.cursor()
-
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS speedtest_log (
-                id INT AUTO_INCREMENT PRIMARY KEY, 
-                test_time DATETIME, 
-                ping FLOAT, 
-                download FLOAT, 
-                upload FLOAT
-            )
-        """)
-
-        sql = "INSERT INTO speedtest_log (test_time, ping, download, upload) VALUES (%s, %s, %s, %s)"
-        cursor.execute(sql, (datetime.now(), ping_ms, download_mbps, upload_mbps))
-        db.commit()
-        db.close()
         print("\nResults logged to database.")
     except Exception as db_err:
         print("\nFailed to log to database:", db_err)
@@ -103,11 +88,10 @@ try:
             alert_msg += f"- {alert}\n"
             
         print("\nSLA Breach detected. Sending Alert...")
-        subprocess.run([
-            "python3",
-            "alert.py",
-            alert_msg
-        ])
+        try:
+            send_telegram(alert_msg)
+        except Exception as e:
+            print(f"Failed to send alert: {e}")
     else:
         print("\nInternet speed is optimal. No SLA breach.")
 

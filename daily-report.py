@@ -1,120 +1,123 @@
 import routeros_api
-import subprocess
 import sys
-import json
 import os
-import mysql.connector
-from datetime import datetime, date
+import django
+from datetime import datetime, date, timedelta
 
-# Allow importing alert.py from same directory
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Setup Django environment
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'web_monitor.settings')
+django.setup()
+
+from web_monitor.dashboard.models import (
+    SpeedtestLog, TrackedDevice, FailoverState, ActivityLog, 
+    SystemMetrics, FailoverEvent, Router
+)
+from django.db.models import Avg, Count
+from django.utils import timezone
+
 try:
     from alert import send_telegram
 except ImportError:
-    def send_telegram(msg): print("[alert] send_telegram not available:", msg)
-
-# ==========================
-# MYSQL CONFIG
-# ==========================
-DB_HOST = "127.0.0.1"
-DB_USER = "root"
-DB_PASS = ""
-DB_NAME = "mikrotik_automation"
-
-# ======================
-# FILES TO ANALYZE
-# ======================
-DEVICES_FILE = "known_devices.json"
-FAILOVER_FILE = "failover_state.json"
-QOS_FILE = "qos_state.json"
+    def send_telegram(msg): 
+        print("[alert] send_telegram not available:", msg)
 
 print("================================")
 print(" MikroTik Daily Network Reporter")
 print(" Time:", datetime.now())
 print("================================")
 
-report = f"📊 *DAILY NETWORK REPORT*\nDate: {date.today()}\n\n"
+# Get active router or first router
+router = Router.objects.filter(is_active=True).first() or Router.objects.first()
+
+if not router:
+    print("Error: No router found in database")
+    sys.exit(1)
+
+report = f"📊 *DAILY NETWORK REPORT*\nDate: {date.today()}\nRouter: {router.name}\n\n"
 
 # 1. Total Active Devices
 try:
-    if os.path.exists(DEVICES_FILE):
-        with open(DEVICES_FILE, "r") as f:
-            devices = json.load(f)
-            total_devices = len(devices)
-            
-            # Count recently seen today
-            today_str = str(date.today())
-            new_today = sum(1 for v in devices.values() if today_str in v.get("first_seen", ""))
-            
-            report += f"📱 *Devices*\n"
-            report += f"Total historical devices: {total_devices}\n"
-            report += f"New devices today: {new_today}\n\n"
-    else:
-        report += "📱 *Devices*: Tracking data not available.\n\n"
+    total_devices = TrackedDevice.objects.filter(router=router).count()
+    new_today = TrackedDevice.objects.filter(
+        router=router,
+        first_seen__date=date.today()
+    ).count()
+    
+    report += f"📱 *Devices*\n"
+    report += f"Total tracked devices: {total_devices}\n"
+    report += f"New devices today: {new_today}\n\n"
 except Exception as e:
-    print("Error analyzing devices:", e)
+    report += "📱 *Devices*: Database error.\n\n"
+    print(f"Error analyzing devices: {e}")
 
 # 2. Avg Internet Speed
 try:
-    db = mysql.connector.connect(
-        host=DB_HOST,
-        user=DB_USER,
-        password=DB_PASS,
-        database=DB_NAME
-    )
-    cursor = db.cursor()
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS speedtest_log (
-            id INT AUTO_INCREMENT PRIMARY KEY, 
-            test_time DATETIME, 
-            ping FLOAT, 
-            download FLOAT, 
-            upload FLOAT
-        )
-    """)
-
-    # Calculate average speed for today
-    sql = "SELECT AVG(download), AVG(upload), AVG(ping) FROM speedtest_log WHERE DATE(test_time) = CURDATE()"
-    cursor.execute(sql)
-    row = cursor.fetchone()
+    today = timezone.now().date()
     
-    if row and row[0] is not None:
-        avg_down, avg_up, avg_ping = row
-        report += "🌐 *Internet Speed (Avg Today)*\n"
-        report += f"Download: {avg_down:.2f} Mbps\n"
-        report += f"Upload  : {avg_up:.2f} Mbps\n"
-        report += f"Latency : {avg_ping:.2f} ms\n\n"
+    speeds = SpeedtestLog.objects.filter(
+        router=router,
+        test_time__date=today
+    ).aggregate(
+        avg_download=Avg('download'),
+        avg_upload=Avg('upload'),
+        avg_ping=Avg('ping'),
+        test_count=Count('id')
+    )
+    
+    if speeds['avg_download'] is not None:
+        report += "🌐 *Internet Speed (Daily Average)*\n"
+        report += f"Download: {speeds['avg_download']:.2f} Mbps\n"
+        report += f"Upload  : {speeds['avg_upload']:.2f} Mbps\n"
+        report += f"Latency : {speeds['avg_ping']:.2f} ms\n"
+        report += f"Tests run: {speeds['test_count']}\n\n"
     else:
-        report += "🌐 *Internet Speed*: No speed tests run today.\n\n"
-        
-    db.close()
+        report += "🌐 *Internet Speed*: No speed tests today.\n\n"
 except Exception as e:
-    report += "🌐 *Internet Speed*: Database not reachable.\n\n"
-    print("Error analyzing speed:", e)
+    report += "🌐 *Internet Speed*: Database error.\n\n"
+    print(f"Error analyzing speed: {e}")
 
-# 3. System States
+# 3. System Health & States
 try:
     report += "⚙️ *System Health*\n"
     
     # Failover state
-    if os.path.exists(FAILOVER_FILE):
-        with open(FAILOVER_FILE, "r") as f:
-            f_state = json.load(f)
-            report += f"- Active connection: {f_state.get('active_wan', 'Unknown')}\n"
-            
-    # QoS state
-    if os.path.exists(QOS_FILE):
-        with open(QOS_FILE, "r") as f:
-            q_state = json.load(f)
-            status = "Activated (Throttled)" if q_state.get('is_throttled') else "Normal"
-            report += f"- Smart QoS Status: {status}\n"
-            
+    failover_state = FailoverState.objects.filter(router=router).first()
+    if failover_state:
+        report += f"- Active WAN: {failover_state.active_wan}\n"
+        
+    # Recent system metrics
+    latest_metrics = SystemMetrics.objects.filter(router=router).order_by('-timestamp').first()
+    if latest_metrics:
+        report += f"- CPU Load: {latest_metrics.cpu_load}%\n"
+        report += f"- RAM Usage: {latest_metrics.ram_usage}%\n"
+        report += f"- Internet: {latest_metrics.internet_status}\n"
+    
+    # Failover events today
+    failover_events_today = FailoverEvent.objects.filter(
+        router=router,
+        timestamp__date=date.today()
+    ).count()
+    
+    if failover_events_today > 0:
+        report += f"- Failover events today: {failover_events_today} ⚠️\n"
+    
+    # Security events today
+    security_events = ActivityLog.objects.filter(
+        router=router,
+        activity_type='security_ban',
+        timestamp__date=date.today()
+    ).count()
+    
+    if security_events > 0:
+        report += f"- Security events today: {security_events} 🛡️\n"
+    
     report += "\n"
 except Exception as e:
-    print("Error analyzing states:", e)
+    report += "⚙️ *System Health*: Database error.\n\n"
+    print(f"Error analyzing health: {e}")
 
-# Final Touches
+# Summary
 report += "Semua sistem berjalan normal! ✨"
 
 print(report)
@@ -124,4 +127,4 @@ try:
     send_telegram(report)
     print("Daily Report sent successfully.")
 except Exception as e:
-    print("Failed to send report:", e)
+    print(f"Failed to send report: {e}")

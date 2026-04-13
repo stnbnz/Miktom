@@ -1,33 +1,32 @@
 import routeros_api
-import subprocess
-import json
 import os
+import sys
+import django
 from datetime import datetime
 
-# ======================
-# ROUTER CONFIG
-# ======================
+# Setup Django environment
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'web_monitor.settings')
+django.setup()
 
-ROUTER_IP = "192.168.88.1"
-USERNAME = "admin"
-PASSWORD = "1945"
-
-# ======================
-# TRACKER CONFIG
-# ======================
-STATE_FILE = "known_devices.json"
+from web_monitor.dashboard.models import Router, TrackedDevice, ActivityLog
 
 print("================================")
 print(" MikroTik Device Tracker")
 print(" Time:", datetime.now())
 print("================================")
 
-# Load known devices
-if os.path.exists(STATE_FILE):
-    with open(STATE_FILE, "r") as f:
-        known_devices = json.load(f)
-else:
-    known_devices = {}
+# Get active router from database
+router = Router.objects.filter(is_active=True).first()
+if not router:
+    print("Error: No active router in database.")
+    sys.exit(1)
+
+ROUTER_IP = router.ip_address
+USERNAME = router.username
+PASSWORD = router.password
+
+print(f"Tracking devices on: {router.name} ({ROUTER_IP})")
 
 try:
     connection = routeros_api.RouterOsApiPool(
@@ -44,45 +43,67 @@ try:
     leases = dhcp_api.get()
     
     new_devices = []
+    now = datetime.now()
 
     for lease in leases:
         mac = lease.get('mac-address')
         # Address can be under 'address' or 'active-address'
         ip = lease.get('active-address', lease.get('address', 'Unknown IP'))
         hostname = lease.get('host-name', 'Unknown Device')
-        status = lease.get('status', 'bound')
         
-        # Only check bounded devices (or static ones if bounded isn't reported accurately by some RouterOS versions)
-        if mac and mac not in known_devices:
-            known_devices[mac] = {
-                "first_seen": str(datetime.now()),
-                "hostname": hostname,
-                "ip": ip
-            }
-            new_devices.append((mac, hostname, ip))
+        if mac:
+            # Check if device is already in database
+            device, created = TrackedDevice.objects.get_or_create(
+                router=router,
+                mac_address=mac,
+                defaults={
+                    'hostname': hostname,
+                    'ip_address': ip,
+                    'is_online': True
+                }
+            )
+            
+            if created:
+                new_devices.append((mac, hostname, ip))
+                print(f"✓ New device detected: {hostname} ({ip}) - {mac}")
+                
+                # Log activity
+                ActivityLog.objects.create(
+                    router=router,
+                    activity_type='device_detected',
+                    description=f'New device detected: {hostname}',
+                    metadata={
+                        'mac_address': mac,
+                        'ip_address': ip,
+                        'hostname': hostname
+                    },
+                    success=True
+                )
+            else:
+                # Update last seen
+                device.last_seen = now
+                device.is_online = True
+                device.save(update_fields=['last_seen', 'is_online'])
 
     connection.disconnect()
 
     if new_devices:
-        alert_msg = "📱 *NEW DEVICE DETECTED*\n\n"
-        alert_msg += "The following new devices have connected to the network:\n"
-        for mac, hostname, ip in new_devices:
-            alert_msg += f"- Host: {hostname}\n  IP: {ip}\n  MAC: {mac}\n\n"
-        
-        print(f"Detected {len(new_devices)} new devices. Sending WhatsApp Alert...")
-        subprocess.run([
-            "python3",
-            "alert.py",
-            alert_msg
-        ])
+        print(f"\nDetected {len(new_devices)} new device(s)")
     else:
         print("No new devices detected.")
-
-    # Save state
-    with open(STATE_FILE, "w") as f:
-        json.dump(known_devices, f, indent=4)
         
     print("Device tracking completed.")
+
+except Exception as e:
+    print(f"Error: {e}")
+    ActivityLog.objects.create(
+        router=router,
+        activity_type='device_detected',
+        description='Device tracking failed',
+        metadata={'error': str(e)},
+        success=False,
+        error_message=str(e)
+    )
 
 except Exception as e:
     print("Error:", e)
