@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Print Voucher Hotspot</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Courier+Prime:wght@700&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #f0f2f5;
+            color: #1a1a2e;
+            padding: 20px;
+        }
+
+        /* ── PRINT ACTION BAR (hidden on print) ── */
+        .print-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #1a1d2e;
+            color: white;
+            padding: 16px 24px;
+            border-radius: 14px;
+            margin-bottom: 24px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        }
+        .print-toolbar h2 {
+            font-size: 18px;
+            font-weight: 700;
+            background: linear-gradient(90deg, #00F0FF, #7000FF);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .print-toolbar p { font-size: 12px; color: #a0a5b1; margin-top: 3px; }
+        .btn-print-now {
+            padding: 10px 24px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #7000FF, #00F0FF);
+            color: white;
+            font-family: 'Inter', sans-serif;
+            font-weight: 700;
+            font-size: 14px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-print-now:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(112,0,255,0.4); }
+
+        /* ── VOUCHER GRID ── */
+        .voucher-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+            gap: 16px;
+        }
+
+        /* ── VOUCHER CARD ── */
+        .voucher-card {
+            background: white;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            border: 1px solid #e2e8f0;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+
+        /* Gradient header by profile */
+        .card-header {
+            padding: 18px 20px 14px;
+            position: relative;
+            overflow: hidden;
+        }
+        .card-header.profile-1jam    { background: linear-gradient(135deg, #7000FF, #9c40ff); }
+        .card-header.profile-3jam    { background: linear-gradient(135deg, #0052d4, #4364f7); }
+        .card-header.profile-1hari   { background: linear-gradient(135deg, #00897B, #26a69a); }
+        .card-header.profile-1minggu { background: linear-gradient(135deg, #e65100, #ff6f00); }
+
+        .card-header::after {
+            content: '';
+            position: absolute;
+            right: -20px; bottom: -20px;
+            width: 100px; height: 100px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.12);
+        }
+
+        .brand-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+        .brand-name {
+            font-size: 13px;
+            font-weight: 700;
+            color: rgba(255,255,255,0.85);
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+        .wifi-icon { color: rgba(255,255,255,0.6); }
+
+        .package-name {
+            font-size: 26px;
+            font-weight: 800;
+            color: white;
+            line-height: 1;
+        }
+        .package-desc {
+            font-size: 11px;
+            color: rgba(255,255,255,0.7);
+            margin-top: 4px;
+        }
+
+        /* Card body */
+        .card-body {
+            padding: 16px 20px 18px;
+        }
+
+        .code-label {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #94a3b8;
+            margin-bottom: 6px;
+        }
+        .voucher-code {
+            font-family: 'Courier Prime', 'Courier New', monospace;
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: 3px;
+            color: #1a1a2e;
+            background: #f1f5f9;
+            border: 2px dashed #cbd5e1;
+            border-radius: 10px;
+            padding: 10px 14px;
+            text-align: center;
+            margin-bottom: 14px;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .info-row:last-child { margin-bottom: 0; }
+
+        .info-item { text-align: center; flex: 1; }
+        .info-item .i-val {
+            font-size: 15px;
+            font-weight: 700;
+            color: #1a1a2e;
+        }
+        .info-item .i-lbl {
+            font-size: 10px;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 2px;
+        }
+
+        .divider {
+            border: none;
+            border-top: 1px dashed #e2e8f0;
+            margin: 12px 0;
+        }
+
+        .footer-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .footer-row .created {
+            font-size: 10px;
+            color: #94a3b8;
+        }
+        .footer-row .batch {
+            font-size: 10px;
+            font-family: monospace;
+            color: #94a3b8;
+        }
+
+        /* ── PRINT STYLES ── */
+        @media print {
+            body {
+                background: white;
+                padding: 8px;
+            }
+            .print-toolbar { display: none; }
+            .voucher-grid {
+                grid-template-columns: repeat(3, 1fr);
+                gap: 10px;
+            }
+            .voucher-card {
+                box-shadow: none;
+                border: 1px solid #ddd;
+            }
+        }
+
+        /* Empty */
+        .empty {
+            text-align: center;
+            padding: 80px 20px;
+            color: #94a3b8;
+        }
+        .empty h2 { font-size: 20px; margin-bottom: 10px; }
+
+        /* Status colors */
+        .status-active { color: #10b981; }
+        .status-used   { color: #f59e0b; }
+    </style>
+</head>
+<body>
+
+    <div class="print-toolbar">
+        <div>
+            <h2>🎫 Print Voucher Hotspot</h2>
+            <p>Dicetak: {{ print_time }} &nbsp;|&nbsp; Total: {{ vouchers|length }} voucher</p>
+        </div>
+        <button class="btn-print-now" onclick="window.print()">
+            🖨️ &nbsp;Print / Save PDF
+        </button>
+    </div>
+
+    {% if vouchers %}
+    <div class="voucher-grid">
+        {% for v in vouchers %}
+        <div class="voucher-card">
+            <div class="card-header profile-{{ v.profile }}">
+                <div class="brand-row">
+                    <span class="brand-name">🌐 WiFi Hotspot</span>
+                    <svg class="wifi-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+                </div>
+                <div class="package-name">
+                    {% if v.profile == '1jam' %}1 Jam
+                    {% elif v.profile == '3jam' %}3 Jam
+                    {% elif v.profile == '1hari' %}1 Hari
+                    {% elif v.profile == '1minggu' %}1 Minggu
+                    {% else %}{{ v.profile }}{% endif %}
+                </div>
+                <div class="package-desc">
+                    Berlaku {{ v.duration_hours }} jam setelah login pertama
+                </div>
+            </div>
+
+            <div class="card-body">
+                <div class="code-label">Kode Akses Voucher</div>
+                <div class="voucher-code">{{ v.code }}</div>
+
+                <div class="info-row">
+                    <div class="info-item">
+                        <div class="i-val">{{ v.duration_hours }}j</div>
+                        <div class="i-lbl">Durasi</div>
+                    </div>
+                    <div style="width:1px; background:#e2e8f0; margin:0 6px;"></div>
+                    <div class="info-item">
+                        <div class="i-val" style="color:#7000FF;">Rp {{ v.price|floatformat:0 }}</div>
+                        <div class="i-lbl">Harga</div>
+                    </div>
+                    <div style="width:1px; background:#e2e8f0; margin:0 6px;"></div>
+                    <div class="info-item">
+                        <div class="i-val {% if v.is_used %}status-used{% else %}status-active{% endif %}">
+                            {% if v.is_used %}Terpakai{% else %}Aktif{% endif %}
+                        </div>
+                        <div class="i-lbl">Status</div>
+                    </div>
+                </div>
+
+                <hr class="divider">
+
+                <div class="footer-row">
+                    <span class="created">📅 {{ v.created_at|date:"d M Y H:i" }}</span>
+                    <span class="batch">Batch: {{ v.batch }}</span>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    {% else %}
+    <div class="empty">
+        <h2>🎫 Tidak ada voucher untuk dicetak</h2>
+        <p>Pastikan voucher sudah dibuat sebelumnya.</p>
+    </div>
+    {% endif %}
+
+</body>
+</html>

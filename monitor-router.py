@@ -1,4 +1,4 @@
-  import routeros_api
+import routeros_api
 import json
 import os
 from datetime import datetime
@@ -7,11 +7,18 @@ from alert import send_telegram
 # ======================
 # ROUTER CONFIG
 # ======================
-ROUTER_IP = "192.168.1.2"
-USERNAME = "admin"
-PASSWORD = ""
+import sys
 
-STATE_FILE = "/home/stnbnz/miktom/router_state.json"
+if len(sys.argv) >= 4:
+    ROUTER_IP = sys.argv[1]
+    USERNAME = sys.argv[2]
+    PASSWORD = sys.argv[3]
+else:
+    ROUTER_IP = "192.168.1.2"
+    USERNAME = "admin"
+    PASSWORD = "1945"
+
+STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "router_state.json")
 
 CPU_THRESHOLD = 80
 RAM_THRESHOLD = 80

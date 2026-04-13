@@ -1,9 +1,17 @@
 import routeros_api
 import subprocess
+import sys
 import json
 import os
 import mysql.connector
 from datetime import datetime, date
+
+# Allow importing alert.py from same directory
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    from alert import send_telegram
+except ImportError:
+    def send_telegram(msg): print("[alert] send_telegram not available:", msg)
 
 # ==========================
 # MYSQL CONFIG
@@ -110,14 +118,10 @@ except Exception as e:
 report += "Semua sistem berjalan normal! ✨"
 
 print(report)
-print("\nSending Daily Report via WhatsApp...")
+print("\nSending Daily Report via Telegram...")
 
 try:
-    subprocess.run([
-        "python3",
-        "alert.py",
-        report
-    ])
+    send_telegram(report)
     print("Daily Report sent successfully.")
 except Exception as e:
     print("Failed to send report:", e)

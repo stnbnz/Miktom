@@ -7,7 +7,7 @@ from datetime import datetime
 # ======================
 ROUTER_IP = "192.168.88.1"
 USERNAME = "admin"
-PASSWORD = ""
+PASSWORD = "1945"
 
 print("================================")
 print(" MikroTik Auto-Setup Wizard")

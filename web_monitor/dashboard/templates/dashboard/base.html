@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}MikroTik Orbit Dashboard{% endblock %}</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #08090f;
+            --glass-bg: rgba(20, 22, 31, 0.55);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --accent-primary: #8b5cf6;
+            --accent-secondary: #06b6d4;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            background-color: #030407;
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(139, 92, 246, 0.12) 0%, transparent 60%),
+                radial-gradient(circle at 90% 80%, rgba(6, 182, 212, 0.12) 0%, transparent 60%),
+                radial-gradient(circle at 50% 50%, rgba(20, 22, 31, 1) 0%, transparent 100%);
+            background-attachment: fixed;
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .navbar {
+            padding: 16px 32px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(8, 9, 15, 0.7);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border-bottom: 1px solid var(--glass-border);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            background: linear-gradient(90deg, var(--accent-secondary), var(--accent-primary));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-badge {
+            padding: 6px 16px;
+            border-radius: 50px;
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(0, 230, 118, 0.1);
+            color: var(--success);
+            border: 1px solid rgba(0, 230, 118, 0.2);
+            box-shadow: 0 0 15px rgba(0, 230, 118, 0.2);
+            transition: all 0.3s ease;
+        }
+
+        .status-badge.offline {
+            background: rgba(255, 82, 82, 0.1);
+            color: var(--danger);
+            border: 1px solid rgba(255, 82, 82, 0.2);
+            box-shadow: 0 0 15px rgba(255, 82, 82, 0.2);
+        }
+
+        .status-badge .indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--success);
+            animation: pulse 2s infinite;
+        }
+
+        .status-badge.offline .indicator {
+            background-color: var(--danger);
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(0, 230, 118, 0.7); }
+            70% { box-shadow: 0 0 0 6px rgba(0, 230, 118, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(0, 230, 118, 0); }
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 0 20px;
+            flex: 1;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .header-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .header-info h1 {
+            margin: 0 0 5px 0;
+            font-size: 32px;
+            font-weight: 700;
+        }
+
+        .header-info p {
+            margin: 0;
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        .app-container {
+            display: flex;
+            flex: 1;
+        }
+
+        .sidebar {
+            width: 260px;
+            background: rgba(8, 9, 15, 0.6);
+            border-right: 1px solid var(--glass-border);
+            padding: 30px 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            flex-shrink: 0;
+            box-shadow: 4px 0 24px rgba(0,0,0,0.2);
+        }
+
+        .sidebar-item {
+            padding: 14px 28px;
+            margin: 0 12px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 15px;
+            font-weight: 500;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid transparent;
+        }
+
+        .sidebar-item:hover {
+            background: rgba(255, 255, 255, 0.04);
+            color: var(--text-main);
+            transform: translateX(4px);
+        }
+
+        .sidebar-item.active {
+            background: linear-gradient(90deg, rgba(139, 92, 246, 0.15), rgba(6, 182, 212, 0.05));
+            border-color: rgba(139, 92, 246, 0.3);
+            color: var(--text-main);
+            box-shadow: inset 0 0 20px rgba(139, 92, 246, 0.05);
+            border-left: 4px solid var(--accent-primary);
+        }
+
+        .sidebar-item svg {
+            width: 20px;
+            height: 20px;
+            stroke-width: 2;
+        }
+
+        @media (max-width: 900px) {
+            .sidebar {
+                display: none;
+            }
+            .header-info {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .header-info-right {
+                align-items: flex-start !important;
+                text-align: left !important;
+                width: 100%;
+                margin-top: 15px;
+            }
+            .header-info-right .btn-group {
+                justify-content: flex-start !important;
+            }
+        }
+
+        .loader-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--bg-color);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 0.5s ease;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(255,255,255,0.1);
+            border-radius: 50%;
+            border-top-color: var(--accent-secondary);
+            animation: spin 1s ease-in-out infinite;
+            margin-bottom: 20px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .error-toast, .action-toast {
+            position: fixed;
+            padding: 15px 25px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            z-index: 1000;
+            backdrop-filter: blur(10px);
+            color: white;
+            font-weight: 500;
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        
+        .error-toast {
+            bottom: 30px;
+            right: 30px;
+            background: rgba(255, 82, 82, 0.9);
+            box-shadow: 0 10px 30px rgba(255, 82, 82, 0.3);
+            transform: translateY(150%);
+        }
+
+        .error-toast.show {
+            transform: translateY(0);
+        }
+
+        .action-toast {
+            top: 30px;
+            right: 30px;
+            transform: translateX(150%);
+        }
+
+        .action-toast.show {
+            transform: translateX(0);
+        }
+
+        .action-toast.success {
+            background: rgba(0, 230, 118, 0.85);
+            box-shadow: 0 10px 30px rgba(0, 230, 118, 0.3);
+            border: 1px solid rgba(0, 230, 118, 0.5);
+        }
+
+        .action-toast.error {
+            background: rgba(255, 82, 82, 0.85);
+            box-shadow: 0 10px 30px rgba(255, 82, 82, 0.3);
+            border: 1px solid rgba(255, 82, 82, 0.5);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 24px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: rgba(18, 20, 28, 0.65);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 20px;
+            padding: 24px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+            opacity: 0;
+            transition: opacity 0.4s;
+        }
+
+        .card:hover::before { opacity: 1; }
+
+        .card:hover {
+            transform: translateY(-6px);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.4);
+            border-color: rgba(255,255,255,0.1);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .card-title {
+            color: var(--text-muted);
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-backup {
+            background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-family: 'Inter', sans-serif;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(139, 92, 246, 0.3);
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-backup:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(6, 182, 212, 0.4);
+        }
+        
+        .btn-backup:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+
+    <div class="loader-overlay" id="loader" style="{% block loader_style %}{% endblock %}">
+        <div class="spinner"></div>
+        <h2 style="font-weight:300; letter-spacing: 2px;">{% block loader_text %}Loading...{% endblock %}</h2>
+    </div>
+
+    <nav class="navbar">
+        <div class="logo">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            Orbit Dashboard
+        </div>
+        <div style="display:flex; gap:15px; align-items:center;">
+            <select id="global-router-select" onchange="changeGlobalRouter(this.value)" style="background: rgba(255,255,255,0.05); color: var(--text-main); border: 1px solid rgba(255,255,255,0.1); padding: 6px 12px; border-radius: 8px; font-family: inherit; font-size: 14px; outline: none; cursor: pointer;">
+                <option value="">Loading routers...</option>
+            </select>
+            {% block navbar_right %}{% endblock %}
+        </div>
+    </nav>
+
+    <div class="app-container">
+        <aside class="sidebar">
+            <a href="{% url 'index' %}" class="sidebar-item {% if request.resolver_match.url_name == 'index' %}active{% endif %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+                Dashboard
+            </a>
+            <a href="{% url 'voucher_page' %}" class="sidebar-item {% if request.resolver_match.url_name == 'voucher_page' %}active{% endif %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="8" width="18" height="8" rx="2" ry="2"></rect><path d="M7 8V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2"></path><path d="M8 12h8"></path></svg>
+                Voucher Gen
+            </a>
+            <a href="{% url 'active_users' %}" class="sidebar-item {% if request.resolver_match.url_name == 'active_users' %}active{% endif %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                Active Users
+            </a>
+            <a href="{% url 'settings_page' %}" class="sidebar-item {% if request.resolver_match.url_name == 'settings_page' %}active{% endif %}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                Settings
+            </a>
+        </aside>
+
+        <div class="container">
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+
+    <div class="error-toast" id="error-toast">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span id="error-msg">Connection lost! Retrying...</span>
+    </div>
+
+    <div class="action-toast" id="action-toast">
+        <svg id="toast-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
+        <span id="action-msg"></span>
+    </div>
+
+    {% block modals %}{% endblock %}
+
+    <script>
+        function showToast(msg, type="success") {
+            const toast = document.getElementById("action-toast");
+            const icon = document.getElementById("toast-icon");
+            document.getElementById("action-msg").innerText = msg;
+            toast.className = "action-toast " + type + " show";
+            
+            if (type === "success") {
+                icon.innerHTML = '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline>';
+            } else {
+                icon.innerHTML = '<circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line>';
+            }
+            
+            setTimeout(() => {
+                toast.classList.remove("show");
+            }, 3000);
+        }
+
+        async function loadGlobalRouters() {
+            try {
+                const res = await fetch('/api/routers');
+                const data = await res.json();
+                if (data.success && data.data && data.data.length > 0) {
+                    const sel = document.getElementById('global-router-select');
+                    sel.innerHTML = '';
+                    data.data.forEach(r => {
+                        const opt = document.createElement('option');
+                        opt.value = r.id;
+                        opt.textContent = r.name + ' (' + r.ip_address + ')';
+                        if (r.id === data.active_id) opt.selected = true;
+                        sel.appendChild(opt);
+                    });
+                } else {
+                    document.getElementById('global-router-select').innerHTML = '<option value="">No routers available</option>';
+                }
+            } catch(e) {
+                console.error("Failed to load routers");
+            }
+        }
+
+        async function changeGlobalRouter(routerId) {
+            if (!routerId) return;
+            try {
+                const res = await fetch('/api/set_active_router', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({id: routerId})
+                });
+                const dat = await res.json();
+                if (dat.success) {
+                    window.location.reload();
+                } else {
+                    showToast('Failed to change router', 'error');
+                }
+            } catch(e) {
+                showToast('Failed to change router', 'error');
+            }
+        }
+        
+        loadGlobalRouters();
+    </script>
+    
+    {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,514 +1,7 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MikroTik Orbit Dashboard</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --bg-color: #0f1015;
-            --glass-bg: rgba(255, 255, 255, 0.04);
-            --glass-border: rgba(255, 255, 255, 0.08);
-            --accent-primary: #7000FF;
-            --accent-secondary: #00F0FF;
-            --text-main: #ffffff;
-            --text-muted: #a0a5b1;
-            --success: #00e676;
-            --danger: #ff5252;
-            --warning: #ffb74d;
-        }
+{% extends "dashboard/base.html" %}
 
-        body {
-            margin: 0;
-            padding: 0;
-            font-family: 'Inter', sans-serif;
-            background-color: var(--bg-color);
-            background-image: 
-                radial-gradient(circle at 15% 50%, rgba(112, 0, 255, 0.15) 0%, transparent 50%),
-                radial-gradient(circle at 85% 30%, rgba(0, 240, 255, 0.1) 0%, transparent 50%);
-            color: var(--text-main);
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .navbar {
-            padding: 20px 40px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: rgba(15, 16, 21, 0.8);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border-bottom: 1px solid var(--glass-border);
-            position: sticky;
-            top: 0;
-            z-index: 100;
-        }
-
-        .logo {
-            font-size: 24px;
-            font-weight: 700;
-            letter-spacing: 1px;
-            background: linear-gradient(90deg, var(--accent-secondary), var(--accent-primary));
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .status-badge {
-            padding: 6px 16px;
-            border-radius: 50px;
-            font-size: 14px;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            background: rgba(0, 230, 118, 0.1);
-            color: var(--success);
-            border: 1px solid rgba(0, 230, 118, 0.2);
-            box-shadow: 0 0 15px rgba(0, 230, 118, 0.2);
-            transition: all 0.3s ease;
-        }
-
-        .status-badge.offline {
-            background: rgba(255, 82, 82, 0.1);
-            color: var(--danger);
-            border: 1px solid rgba(255, 82, 82, 0.2);
-            box-shadow: 0 0 15px rgba(255, 82, 82, 0.2);
-        }
-
-        .status-badge .indicator {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background-color: var(--success);
-            animation: pulse 2s infinite;
-        }
-
-        .status-badge.offline .indicator {
-            background-color: var(--danger);
-        }
-
-        @keyframes pulse {
-            0% { box-shadow: 0 0 0 0 rgba(0, 230, 118, 0.7); }
-            70% { box-shadow: 0 0 0 6px rgba(0, 230, 118, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(0, 230, 118, 0); }
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 40px auto;
-            padding: 0 20px;
-            flex: 1;
-            width: 100%;
-            box-sizing: border-box;
-        }
-
-        .header-info {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-end;
-            margin-bottom: 30px;
-        }
-
-        .header-info h1 {
-            margin: 0 0 5px 0;
-            font-size: 32px;
-            font-weight: 700;
-        }
-
-        .header-info p {
-            margin: 0;
-            color: var(--text-muted);
-            font-size: 14px;
-        }
-
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 25px;
-            margin-bottom: 30px;
-        }
-
-        .card {
-            background: var(--glass-bg);
-            border: 1px solid var(--glass-border);
-            border-radius: 20px;
-            padding: 25px;
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-            position: relative;
-            overflow: hidden;
-            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s ease;
-        }
-
-        .card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 40px rgba(112, 0, 255, 0.15);
-            border-color: rgba(255, 255, 255, 0.15);
-        }
-
-        .card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 4px;
-            background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-
-        .card:hover::before {
-            opacity: 1;
-        }
-
-        .card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-
-        .card-title {
-            font-size: 16px;
-            font-weight: 600;
-            color: var(--text-muted);
-        }
-
-        .card-icon {
-            width: 40px;
-            height: 40px;
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: rgba(255, 255, 255, 0.05);
-            font-size: 18px;
-        }
-
-        .card-value {
-            font-size: 36px;
-            font-weight: 700;
-            margin-bottom: 5px;
-            display: flex;
-            align-items:baseline;
-            gap: 5px;
-        }
-
-        .card-unit {
-            font-size: 16px;
-            font-weight: 400;
-            color: var(--text-muted);
-        }
-
-        .progress-bar {
-            width: 100%;
-            height: 8px;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 10px;
-            overflow: hidden;
-            margin-top: 15px;
-            position: relative;
-        }
-
-        .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
-            border-radius: 10px;
-            width: 0%;
-            transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
-            position: relative;
-            overflow: hidden;
-        }
-
-        .progress-fill::after {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
-            transform: translateX(-100%);
-            animation: shimmer 2s infinite;
-        }
-
-        @keyframes shimmer {
-            100% { transform: translateX(100%); }
-        }
-
-        .progress-fill.warning {
-            background: linear-gradient(90deg, #ffb74d, #f57c00);
-        }
-
-        .progress-fill.danger {
-            background: linear-gradient(90deg, #ff5252, #d32f2f);
-        }
-
-        .interfaces-section {
-            background: var(--glass-bg);
-            border: 1px solid var(--glass-border);
-            border-radius: 20px;
-            padding: 30px;
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-        }
-
-        .interfaces-header {
-            margin-bottom: 20px;
-            font-size: 20px;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .interface-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-            gap: 15px;
-        }
-
-        .iface-card {
-            background: rgba(255, 255, 255, 0.02);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            border-radius: 15px;
-            padding: 15px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            transition: background 0.3s;
-        }
-
-        .iface-card:hover {
-            background: rgba(255, 255, 255, 0.06);
-        }
-
-        .iface-name {
-            font-size: 14px;
-            font-weight: 500;
-        }
-
-        .iface-status {
-            padding: 4px 10px;
-            border-radius: 6px;
-            font-size: 11px;
-            font-weight: 700;
-            letter-spacing: 0.5px;
-        }
-
-        .iface-up {
-            background: rgba(0, 230, 118, 0.15);
-            color: var(--success);
-        }
-
-        .iface-down {
-            background: rgba(255, 82, 82, 0.15);
-            color: var(--danger);
-        }
-
-        .bottom-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 25px;
-        }
-
-        @media (max-width: 768px) {
-            .bottom-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-
-        .notif-container {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            max-height: 300px;
-            overflow-y: auto;
-            padding-right: 5px;
-        }
-
-        .notif-container::-webkit-scrollbar {
-            width: 6px;
-        }
-        .notif-container::-webkit-scrollbar-thumb {
-            background: rgba(255,255,255,0.1);
-            border-radius: 10px;
-        }
-
-        .alert-card {
-            background: rgba(255, 255, 255, 0.03);
-            border-left: 4px solid var(--accent-primary);
-            padding: 12px 15px;
-            border-radius: 8px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .alert-card.danger {
-            border-left-color: var(--danger);
-            background: rgba(255, 82, 82, 0.05);
-        }
-        
-        .alert-card.warning {
-            border-left-color: var(--warning);
-            background: rgba(255, 183, 77, 0.05);
-        }
-
-        .alert-card.success {
-            border-left-color: var(--success);
-            background: rgba(0, 230, 118, 0.05);
-        }
-
-        .alert-msg {
-            font-size: 14px;
-            font-weight: 500;
-        }
-
-        .alert-time {
-            font-size: 11px;
-            color: var(--text-muted);
-            white-space: nowrap;
-        }
-
-        .loader-overlay {
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: var(--bg-color);
-            z-index: 1000;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            transition: opacity 0.5s ease;
-        }
-
-        .spinner {
-            width: 50px;
-            height: 50px;
-            border: 3px solid rgba(255,255,255,0.1);
-            border-radius: 50%;
-            border-top-color: var(--accent-secondary);
-            animation: spin 1s ease-in-out infinite;
-            margin-bottom: 20px;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        .error-toast {
-            position: fixed;
-            bottom: 30px;
-            right: 30px;
-            background: rgba(255, 82, 82, 0.9);
-            color: white;
-            padding: 15px 25px;
-            border-radius: 12px;
-            box-shadow: 0 10px 30px rgba(255, 82, 82, 0.3);
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            transform: translateY(150%);
-            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            z-index: 100;
-            backdrop-filter: blur(10px);
-        }
-
-        .error-toast.show {
-            transform: translateY(0);
-        }
-
-        .action-toast {
-            position: fixed;
-            top: 30px;
-            right: 30px;
-            padding: 15px 25px;
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            transform: translateX(150%);
-            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            z-index: 1000;
-            backdrop-filter: blur(10px);
-            color: white;
-            font-weight: 500;
-        }
-
-        .action-toast.show {
-            transform: translateX(0);
-        }
-
-        .action-toast.success {
-            background: rgba(0, 230, 118, 0.85);
-            box-shadow: 0 10px 30px rgba(0, 230, 118, 0.3);
-            border: 1px solid rgba(0, 230, 118, 0.5);
-        }
-
-        .action-toast.error {
-            background: rgba(255, 82, 82, 0.85);
-            box-shadow: 0 10px 30px rgba(255, 82, 82, 0.3);
-            border: 1px solid rgba(255, 82, 82, 0.5);
-        }
-
-        .btn-backup {
-            background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
-            border: none;
-            color: white;
-            padding: 10px 20px;
-            border-radius: 8px;
-            font-family: 'Inter', sans-serif;
-            font-weight: 600;
-            cursor: pointer;
-            box-shadow: 0 4px 15px rgba(112, 0, 255, 0.3);
-            transition: all 0.3s ease;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .btn-backup:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(0, 240, 255, 0.4);
-        }
-
-        .btn-backup:active {
-            transform: translateY(0);
-        }
-
-        .btn-backup:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-    </style>
-</head>
-<body>
-
-    <div class="loader-overlay" id="loader">
-        <div class="spinner"></div>
-        <h2 style="font-weight:300; letter-spacing: 2px;">Connecting to MikroTik...</h2>
-    </div>
-
-    <nav class="navbar">
-        <div class="logo">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-            Orbit Dashboard
-        </div>
-        <div style="display:flex; gap:15px;">
-            <div class="status-badge" id="latency-badge" style="background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1); color: var(--text-main);">
+{% block navbar_right %}
+<div class="status-badge" id="latency-badge" style="background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1); color: var(--text-main);">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
                 <span id="ping-text">... ms</span>
             </div>
@@ -516,18 +9,129 @@
                 <div class="indicator"></div>
                 <span id="internet-text">Connecting...</span>
             </div>
-        </div>
-    </nav>
+{% endblock %}
 
-    <div class="container">
-        <div class="header-info">
+{% block extra_css %}
+<style>
+    .card-icon {
+        background: rgba(255,255,255,0.05);
+        padding: 10px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid rgba(255,255,255,0.05);
+    }
+    
+    .card:hover .card-icon {
+        box-shadow: 0 0 15px currentColor;
+    }
+
+    .card-value {
+        font-size: 36px;
+        font-weight: 800;
+        margin-bottom: 15px;
+        color: var(--text-main);
+        display: flex;
+        align-items: baseline;
+        gap: 4px;
+        line-height: 1;
+    }
+
+    .card-unit {
+        font-size: 16px;
+        color: var(--text-muted);
+        font-weight: 600;
+    }
+
+    .progress-bar {
+        width: 100%;
+        height: 6px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 6px;
+        overflow: hidden;
+        margin-top: auto;
+    }
+
+    .progress-fill {
+        height: 100%;
+        width: 0%;
+        border-radius: 6px;
+        transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+        box-shadow: 0 0 10px var(--accent-primary);
+    }
+
+    .bottom-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 24px;
+    }
+
+    .interfaces-section {
+        background: var(--glass-bg);
+        border: 1px solid var(--glass-border);
+        border-radius: 16px;
+        padding: 24px;
+        box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+        backdrop-filter: blur(12px);
+    }
+
+    .interfaces-header {
+        font-size: 18px;
+        font-weight: 700;
+        margin-bottom: 24px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+        color: var(--text-main);
+    }
+
+    .interface-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 16px;
+    }
+
+    .interface-pill {
+        background: rgba(0,0,0,0.2);
+        border: 1px solid var(--glass-border);
+        padding: 16px;
+        border-radius: 12px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        transition: all 0.25s;
+    }
+    
+    .interface-pill:hover {
+        background: rgba(255,255,255,0.03);
+        border-color: rgba(255,255,255,0.15);
+    }
+
+    .interface-pill.up { border-left: 4px solid var(--success); }
+    .interface-pill.down { border-left: 4px solid var(--danger); opacity: 0.6; }
+
+    .iface-name { font-weight: 600; font-size: 15px; color: white; }
+    .iface-traffic { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+
+    .notif-container table { width: 100%; border-collapse: collapse; }
+    .notif-container td { padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); color: var(--text-main); }
+    .notif-container tr:hover td { background: rgba(255,255,255,0.02); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="header-info">
             <div>
                 <h1>System Overview</h1>
                 <p>Real-time analytics for RouterBoard <span id="r-board" style="color:var(--text-main); font-weight:600;">...</span></p>
             </div>
-            <div style="text-align: right; display:flex; flex-direction:column; align-items:flex-end;">
+            <div class="header-info-right" style="text-align: right; display:flex; flex-direction:column; align-items:flex-end;">
                 <p style="margin-bottom: 12px;">Uptime: <span id="r-uptime" style="color:var(--text-main); font-weight:600;">...</span></p>
-                <div style="display:flex; gap:10px;">
+                <div class="btn-group" style="display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end;">
                     <button class="btn-backup" style="background: linear-gradient(90deg, #d50000, #b71c1c); box-shadow:0 4px 15px rgba(213,0,0,0.3);" id="factory-reset-btn" onclick="triggerReset()">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
                         Reset Config
@@ -667,20 +271,10 @@
                 </div>
             </div>
         </div>
+{% endblock %}
 
-    </div>
-
-    <div class="error-toast" id="error-toast">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        <span id="error-msg">Connection lost! Retrying...</span>
-    </div>
-
-    <div class="action-toast" id="action-toast">
-        <svg id="toast-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
-        <span id="action-msg"></span>
-    </div>
-
-    <div id="reboot-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); backdrop-filter:blur(10px); z-index:2000; align-items:center; justify-content:center; opacity:0; transition:opacity 0.3s ease;">
+{% block modals %}
+<div id="reboot-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); backdrop-filter:blur(10px); z-index:2000; align-items:center; justify-content:center; opacity:0; transition:opacity 0.3s ease;">
         <div style="background:var(--bg-color); border:1px solid rgba(255,82,82,0.5); border-radius:15px; padding:30px; max-width:400px; text-align:center; box-shadow:0 10px 40px rgba(255,82,82,0.3); transform:scale(0.9); transition:transform 0.3s ease;">
             <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:15px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
             <h2 style="margin:0 0 10px 0; font-size:22px; font-weight:700;">Confirm System Reboot</h2>
@@ -704,9 +298,11 @@
             </div>
         </div>
     </div>
+{% endblock %}
 
-    <script>
-        const UPDATE_INTERVAL = 3000;
+{% block scripts %}
+<script>
+const UPDATE_INTERVAL = 3000;
         let isFirstLoad = true;
 
         // Chart.js State
@@ -800,13 +396,6 @@
                 const res = await fetch('/api/router_status');
                 const data = await res.json();
 
-                if (!data.success) {
-                    showError(data.error || "Failed to fetch data from API");
-                    return;
-                }
-
-                // Hide error and loader
-                hideError();
                 if (isFirstLoad) {
                     document.getElementById('loader').style.opacity = '0';
                     setTimeout(() => document.getElementById('loader').style.display = 'none', 500);
@@ -814,6 +403,14 @@
                     initChart();
                     fetchBackupLogs();
                 }
+
+                if (!data.success) {
+                    showError(data.error || "Failed to fetch data from API");
+                    return;
+                }
+
+                // Hide error
+                hideError();
 
                 // Update Overview
                 document.getElementById('r-board').textContent = data.board;
@@ -871,6 +468,13 @@
                 }
 
             } catch (err) {
+                if (isFirstLoad) {
+                    document.getElementById('loader').style.opacity = '0';
+                    setTimeout(() => document.getElementById('loader').style.display = 'none', 500);
+                    isFirstLoad = false;
+                    initChart();
+                    fetchBackupLogs();
+                }
                 showError("Network unreachable. Is Django running?");
             }
         }
@@ -1079,7 +683,5 @@
         // Cycle
         fetchStatus();
         setInterval(fetchStatus, UPDATE_INTERVAL);
-
-    </script>
-</body>
-</html>
+</script>
+{% endblock %}

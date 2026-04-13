@@ -9,9 +9,16 @@ from datetime import datetime, timedelta
 # ROUTER CONFIG
 # ==========================
 
-ROUTER_IP = "192.168.1.2"
-USERNAME = "admin"
-PASSWORD = ""
+import sys
+
+if len(sys.argv) >= 4:
+    ROUTER_IP = sys.argv[1]
+    USERNAME = sys.argv[2]
+    PASSWORD = sys.argv[3]
+else:
+    ROUTER_IP = "192.168.1.2"
+    USERNAME = "admin"
+    PASSWORD = "1945"
 
 # ==========================
 # MYSQL CONFIG
@@ -26,7 +33,7 @@ DB_NAME = "mikrotik_automation"
 # BACKUP FOLDER
 # ==========================
 
-BASE_BACKUP_DIR = "/home/stnbnz/miktom/mikrotik-backup"
+BASE_BACKUP_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "mikrotik-backup"))
 
 # ==========================
 # TIME
