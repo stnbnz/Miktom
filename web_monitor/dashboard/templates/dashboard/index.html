@@ -477,15 +477,13 @@ const UPDATE_INTERVAL = 3000;
         }
 
         function showError(msg) {
-            const toast = document.getElementById('error-toast');
-            document.getElementById('error-msg').textContent = msg;
-            toast.classList.add('show');
+            // Update the top UI to indicate offline, bypassing bottom error toast
             document.getElementById('main-status').classList.add('offline');
             document.getElementById('internet-text').textContent = 'Disconnected';
         }
 
         function hideError() {
-            document.getElementById('error-toast').classList.remove('show');
+            // No longer needed
         }
 
         function showActionToast(msg, type) {

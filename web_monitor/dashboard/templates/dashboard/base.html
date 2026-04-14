@@ -247,17 +247,7 @@
             transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
         
-        .error-toast {
-            bottom: 30px;
-            right: 30px;
-            background: rgba(255, 82, 82, 0.9);
-            box-shadow: 0 10px 30px rgba(255, 82, 82, 0.3);
-            transform: translateY(150%);
-        }
 
-        .error-toast.show {
-            transform: translateY(0);
-        }
 
         .action-toast {
             top: 30px;
@@ -367,7 +357,7 @@
 </head>
 <body>
 
-    <div class="loader-overlay" id="loader" style="{% block loader_style %}{% endblock %}">
+    <div class="loader-overlay" id="loader" {% block loader_attr %}{% endblock %}>
         <div class="spinner"></div>
         <h2 style="font-weight:300; letter-spacing: 2px;">{% block loader_text %}Loading...{% endblock %}</h2>
     </div>
@@ -410,10 +400,7 @@
         </div>
     </div>
 
-    <div class="error-toast" id="error-toast">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        <span id="error-msg">Connection lost! Retrying...</span>
-    </div>
+
 
     <div class="action-toast" id="action-toast">
         <svg id="toast-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
