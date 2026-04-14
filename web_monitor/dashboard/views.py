@@ -833,6 +833,65 @@ def kick_hotspot_user(request):
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
 
+@csrf_exempt
+def manage_blocked_user(request):
+    """API endpoint to block/unblock user by MAC Address via Hotspot IP Bindings"""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST only'})
+    try:
+        data = json_lib.loads(request.body)
+        mac_address = data.get('mac_address')
+        action = data.get('action') # 'block' or 'unblock'
+        
+        if not mac_address:
+            return JsonResponse({'success': False, 'error': 'No MAC Address provided'})
+            
+        router = _get_active_router(request)
+        if not router:
+            return JsonResponse({'success': False, 'error': 'No router configured'})
+            
+        try:
+            conn, api = _get_mikrotik_api_for_router(router)
+            
+            bindings = api.get_resource('/ip/hotspot/ip-binding')
+            
+            # Find if already exists
+            existing = bindings.get(**{'mac-address': mac_address})
+            
+            if action == 'block':
+                # First, kick them if they are active
+                try:
+                    active = api.get_resource('/ip/hotspot/active').get(**{'mac-address': mac_address})
+                    if active and len(active) > 0:
+                        api.get_resource('/ip/hotspot/active').remove(id=active[0].get('.id'))
+                except Exception:
+                    pass
+                
+                # Update or Add binding
+                if existing and len(existing) > 0:
+                    bindings.set(id=existing[0].get('.id'), type='blocked', comment='Blocked via Dashboard')
+                else:
+                    bindings.add(**{'mac-address': mac_address, 'type': 'blocked', 'comment': 'Blocked via Dashboard'})
+                
+                _log_activity(request, 'security_ban', f'Blocked MAC: {mac_address}', router=router)
+                
+            elif action == 'unblock':
+                if existing and len(existing) > 0:
+                    for b in existing:
+                        bindings.remove(id=b.get('.id'))
+                
+                _log_activity(request, 'security_ban', f'Unblocked MAC: {mac_address}', router=router)
+                
+            conn.disconnect()
+            return JsonResponse({'success': True})
+            
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': f'Router Disconnected: {str(e)}'})
+            
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+
 def settings_page(request):
     """Render settings page"""
     return render(request, 'dashboard/settings.html')
@@ -1130,6 +1189,66 @@ def sse_updates(request):
                         data = {"routers": router_data, "active_id": active_id}
                     except Exception as e:
                         data = {"error": str(e)}
+                        
+                elif current_url == 'active_users':
+                    try:
+                        router = _get_active_router(request)
+                        if not router:
+                            data = {"error": "No router configured", "users": [], "blocked": []}
+                        else:
+                            active_list = []
+                            blocked_list = []
+                            try:
+                                conn, api = _get_mikrotik_api_for_router(router)
+                                
+                                # Hotspot Active users
+                                hotspot_active = api.get_resource('/ip/hotspot/active').get()
+                                for user in hotspot_active:
+                                    active_list.append({
+                                        'id': user.get('.id'),
+                                        'server': user.get('server', ''),
+                                        'user': user.get('user', ''),
+                                        'address': user.get('address', ''),
+                                        'mac_address': user.get('mac-address', ''),
+                                        'uptime': user.get('uptime', ''),
+                                        'bytes_in': int(user.get('bytes-in', 0)),
+                                        'bytes_out': int(user.get('bytes-out', 0)),
+                                        'type': 'Hotspot'
+                                    })
+                                
+                                # PPPoE Active users
+                                ppp_active = api.get_resource('/ppp/active').get()
+                                for user in ppp_active:
+                                    # PPPoE uses 'caller-id' for mac
+                                    active_list.append({
+                                        'id': user.get('.id'),
+                                        'server': user.get('service', 'pppoe'),
+                                        'user': user.get('name', ''),
+                                        'address': user.get('address', ''),
+                                        'mac_address': user.get('caller-id', ''),
+                                        'uptime': user.get('uptime', ''),
+                                        'bytes_in': 0, # PPP bytes usually in interface
+                                        'bytes_out': 0,
+                                        'type': 'PPPoE'
+                                    })
+                                
+                                # Find blocked MACs in Hotspot IP Binding
+                                bindings = api.get_resource('/ip/hotspot/ip-binding').get()
+                                for b in bindings:
+                                    if b.get('type') == 'blocked':
+                                        blocked_list.append({
+                                            'id': b.get('.id'),
+                                            'mac_address': b.get('mac-address', ''),
+                                            'address': b.get('address', ''),
+                                            'comment': b.get('comment', '')
+                                        })
+                                        
+                                conn.disconnect()
+                                data = {"users": active_list, "blocked": blocked_list}
+                            except Exception as e:
+                                data = {"error": f"Router Disconnected: {str(e)}", "users": [], "blocked": []}
+                    except Exception as e:
+                        data = {"error": str(e), "users": [], "blocked": []}
                 
                 # Only send if data has changed
                 if data != last_data:
