@@ -514,9 +514,14 @@ def generate_vouchers(request):
 
         batch_id  = uuid.uuid4().hex[:8].upper()
 
-        router = _get_active_router(request)
-        conn, api = _get_mikrotik_api_for_router(router)
-        hotspot_user = api.get_resource('/ip/hotspot/user')
+        try:
+            router = _get_active_router(request)
+            if not router:
+                return JsonResponse({'success': False, 'error': 'No router configured'})
+            conn, api = _get_mikrotik_api_for_router(router)
+            hotspot_user = api.get_resource('/ip/hotspot/user')
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': f'Router Disconnected: Tidak dapat membuat voucher saat router offline. Detail: {str(e)}'})
 
         created_codes = []
         for _ in range(quantity):
@@ -526,15 +531,26 @@ def generate_vouchers(request):
             
             password = _gen_password()
 
-            # Push ke MikroTik sebagai Hotspot User
-            hotspot_user.add(**{
-                'name':    code,
-                'password': password,
-                'profile': 'default',
-                'comment': f'Voucher {duration_label} - Batch {batch_id}',
-                'limit-uptime': f'{hours}h',
-            })
+            # Push to MikroTik first. If it fails mid-way, it stops and throws error.
+            try:
+                hotspot_user.add(**{
+                    'name':    code,
+                    'password': password,
+                    'profile': 'default',
+                    'comment': f'Voucher {duration_label} - Batch {batch_id}',
+                    'limit-uptime': f'{hours}h',
+                })
+            except Exception as e:
+                # Disconnect and return early if router disconnects mid-way
+                if conn:
+                    try: conn.disconnect()
+                    except: pass
+                return JsonResponse({
+                    'success': False, 
+                    'error': f'MikroTik Push Error setelah {len(created_codes)} voucher. Koneksi terputus: {str(e)}'
+                })
 
+            # If MikroTik succeeds, then save to database
             Voucher.objects.create(
                 code=code,
                 password=password,
@@ -546,7 +562,11 @@ def generate_vouchers(request):
             )
             created_codes.append(code)
 
-        conn.disconnect()
+        if conn:
+            try:
+                conn.disconnect()
+            except Exception:
+                pass
         
         # Log the voucher generation activity
         _log_activity(
@@ -587,34 +607,29 @@ def delete_vouchers_batch(request):
         codes = codes[:100]  # Batasi 100 per batch
         
         router = _get_active_router(request)
-        conn = None
-        hotspot_user = None
+        if not router:
+            return JsonResponse({'success': False, 'error': 'No router configured'})
+            
+        try:
+            conn, api = _get_mikrotik_api_for_router(router)
+            hotspot_user = api.get_resource('/ip/hotspot/user')
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': f'Router Disconnected: Tidak dapat menghapus voucher saat router offline. Detail: {str(e)}'})
+            
         deleted_from_mikrotik = 0
         deleted_from_db = 0
-        
-        # Connect to MikroTik first
-        if router:
-            try:
-                conn, api = _get_mikrotik_api_for_router(router)
-                hotspot_user = api.get_resource('/ip/hotspot/user')
-                print(f"Connected to MikroTik at {router.ip_address}")
-            except Exception as e:
-                print(f"Failed to connect to MikroTik: {e}")
-                hotspot_user = None
         
         # Delete from MikroTik first, then from database
         for code in codes:
             # Try to remove from MikroTik first
-            if hotspot_user:
-                if _remove_voucher_from_mikrotik(hotspot_user, code):
-                    deleted_from_mikrotik += 1
+            if _remove_voucher_from_mikrotik(hotspot_user, code):
+                deleted_from_mikrotik += 1
             
             # Then remove from database
             try:
                 rows, _ = Voucher.objects.filter(code=code).delete()
                 if rows:
                     deleted_from_db += rows
-                    print(f"Deleted {code} from database")
             except Exception as e:
                 print(f"Error deleting {code} from database: {e}")
         
@@ -622,7 +637,6 @@ def delete_vouchers_batch(request):
         if conn:
             try:
                 conn.disconnect()
-                print("Disconnected from MikroTik")
             except Exception:
                 pass
 
@@ -709,15 +723,17 @@ def delete_voucher(request, code):
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'POST only'})
     try:
+        router = _get_active_router(request)
+        if not router:
+            return JsonResponse({'success': False, 'error': 'No router configured'})
+            
         try:
-            router = _get_active_router(request)
-            if router:
-                conn, api = _get_mikrotik_api_for_router(router)
-                hotspot_user = api.get_resource('/ip/hotspot/user')
-                _remove_voucher_from_mikrotik(hotspot_user, code)
-                conn.disconnect()
-        except Exception:
-            pass
+            conn, api = _get_mikrotik_api_for_router(router)
+            hotspot_user = api.get_resource('/ip/hotspot/user')
+            _remove_voucher_from_mikrotik(hotspot_user, code)
+            conn.disconnect()
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': f'Router Disconnected: Tidak dapat menghapus voucher saat router offline. Detail: {str(e)}'})
 
         Voucher.objects.filter(code=code).delete()
         return JsonResponse({'success': True})
@@ -1014,6 +1030,7 @@ def sse_updates(request):
                             
                             connection.disconnect()
                             
+                            
                             data = {
                                 "cpu_load": cpu_load,
                                 "ram_usage": ram_usage,
@@ -1031,12 +1048,20 @@ def sse_updates(request):
                                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             }
                     except Exception as e:
-                        data = {"error": str(e)}
+                        # Fallback for dashboard if router disconnected
+                        data = {
+                            "cpu_load": 0, "ram_usage": 0, "free_mem_mb": 0, "total_mem_mb": 0,
+                            "uptime": "Disconnected", "version": "N/A", "board": "Unknown",
+                            "internet_status": "DOWN", "ping_latency": "0", "active_users": 0, "banned_ips": 0,
+                            "interfaces": [], 
+                            "alerts": [{"type": "danger", "message": f"Connection Error: {str(e)}", "time": datetime.now().strftime("%H:%M:%S")}],
+                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        }
                         
                 elif current_url == 'voucher':
                     # Get voucher data
+                    active_codes = set()
                     try:
-                        active_codes = set()
                         router = _get_active_router(request)
                         if router:
                             conn, api = _get_mikrotik_api_for_router(router)
@@ -1044,6 +1069,10 @@ def sse_updates(request):
                             for s in active_sessions:
                                 active_codes.add(s.get('user', ''))
                             conn.disconnect()
+                    except Exception:
+                        pass
+                    
+                    try:
                         
                         vouchers = Voucher.objects.all()[:200]
                         voucher_data = []
