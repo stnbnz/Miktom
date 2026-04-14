@@ -1089,7 +1089,6 @@ def sse_updates(request):
                             
                             connection.disconnect()
                             
-                            
                             data = {
                                 "cpu_load": cpu_load,
                                 "ram_usage": ram_usage,
@@ -1106,6 +1105,8 @@ def sse_updates(request):
                                 "alerts": alerts,
                                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             }
+                        else:
+                            data = {"error": "No router configured. Please add one in Settings."}
                     except Exception as e:
                         # Fallback for dashboard if router disconnected
                         data = {

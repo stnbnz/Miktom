@@ -512,9 +512,9 @@
                 try {
                     const data = JSON.parse(event.data);
                     
+                    // Pass down error so that updateDashboard/etc can gracefully hide loader and show error toast
                     if (data.error) {
                         console.error('SSE Error:', data.error);
-                        return;
                     }
                     
                     // Update based on page type
@@ -524,6 +524,9 @@
                         updateVouchers(data);
                     } else if (pageType === 'settings' && typeof updateRouters === 'function') {
                         updateRouters(data);
+                    } else if (pageType === 'active_users' && typeof updateDashboard === 'function') {
+                        // Assuming active_users page uses updateDashboard or its own function
+                        updateDashboard(data); // Active users HTML has updateDashboard
                     }
                     
                 } catch (e) {
