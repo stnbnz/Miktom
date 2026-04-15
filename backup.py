@@ -7,11 +7,11 @@ import django
 from datetime import datetime, timedelta
 
 # Setup Django environment
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web_monitor'))
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'web_monitor.settings')
 django.setup()
 
-from web_monitor.dashboard.models import Router, BackupLog, ActivityLog
+from dashboard.models import Router, BackupLog, ActivityLog
 
 # ==========================
 # COMMAND LINE ARGUMENTS

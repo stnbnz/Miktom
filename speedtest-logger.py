@@ -6,11 +6,11 @@ import django
 from datetime import datetime
 
 # Setup Django environment
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web_monitor'))
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'web_monitor.settings')
 django.setup()
 
-from web_monitor.dashboard.models import SpeedtestLog
+from dashboard.models import SpeedtestLog
 from alert import send_telegram
 
 # ======================
