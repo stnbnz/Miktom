@@ -516,7 +516,9 @@ let t=0, a=0, u=0, onl=0, exp=0;
             });
             const dat = await res.json();
             if(dat.success) {
-                showToast(`Deleted ${dat.deleted}/${dat.total} vouchers`);
+                let msg = `Deleted ${dat.deleted}/${dat.total} vouchers from DB, ${dat.deleted_from_mikrotik} from MikroTik`;
+                if (dat.kicked_sessions > 0) msg += `, kicked ${dat.kicked_sessions} active sessions`;
+                showToast(msg);
                 loadVouchers();
                 document.querySelectorAll('.row-chk').forEach(x => x.checked = false);
             } else {

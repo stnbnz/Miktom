@@ -1,0 +1,300 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}PPPoE Manager{% endblock %}
+
+{% block extra_css %}
+<style>
+    .kpi-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 20px;
+        margin-bottom: 25px;
+    }
+    
+    .kpi-card {
+        background: var(--glass-bg);
+        border: 1px solid var(--glass-border);
+        border-radius: 15px;
+        padding: 20px;
+        text-align: center;
+        backdrop-filter: blur(10px);
+    }
+    
+    .kpi-card .val {
+        font-size: 28px;
+        font-weight: 700;
+        margin: 5px 0;
+    }
+    
+    .kpi-card .lbl {
+        font-size: 13px;
+        color: var(--text-muted);
+    }
+
+    .form-panel {
+        background: var(--glass-bg);
+        border: 1px solid var(--glass-border);
+        border-radius: 20px;
+        padding: 30px;
+        margin-bottom: 30px;
+    }
+
+    .form-group {
+        margin-bottom: 20px;
+    }
+
+    .form-group label {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 14px;
+        color: var(--text-muted);
+    }
+
+    .form-control {
+        width: 100%;
+        background: rgba(0,0,0,0.3);
+        border: 1px solid var(--glass-border);
+        color: white;
+        padding: 12px 15px;
+        border-radius: 10px;
+        font-family: inherit;
+        outline: none;
+    }
+
+    .form-control:focus {
+        border-color: var(--accent-primary);
+    }
+
+    .btn-act {
+        background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+        border: none;
+        color: white;
+        padding: 12px 25px;
+        border-radius: 10px;
+        font-weight: 600;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        box-shadow: 0 5px 20px rgba(168, 85, 247, 0.3);
+        transition: transform 0.2s;
+    }
+    
+    .btn-act:hover {
+        transform: translateY(-2px);
+    }
+
+    .table-container {
+        overflow-x: auto;
+        background: var(--glass-bg);
+        border: 1px solid var(--glass-border);
+        border-radius: 20px;
+        padding: 20px;
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+    }
+
+    th {
+        text-align: left;
+        padding: 15px;
+        color: var(--text-muted);
+        border-bottom: 1px solid var(--glass-border);
+        font-weight: 500;
+    }
+
+    td {
+        padding: 15px;
+        border-bottom: 1px solid rgba(255,255,255,0.02);
+    }
+    
+    tbody tr:hover {
+        background: rgba(255,255,255,0.02);
+    }
+
+    .badge {
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 11px;
+        font-weight: 700;
+    }
+    .b-active { background: rgba(0,230,118,0.15); color: var(--success); }
+    .b-disabled { background: rgba(255,82,82,0.12); color: var(--danger); }
+
+    .del-btn {
+        background: rgba(255,82,82,0.1);
+        color: var(--danger);
+        border: 1px solid rgba(255,82,82,0.2);
+        padding: 6px 12px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 12px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="header-info">
+    <div>
+        <h1>PPPoE Manager</h1>
+        <p>Manage Customer PPPoE Connections & Secrets</p>
+    </div>
+</div>
+
+<div class="kpi-row">
+    <div class="kpi-card">
+        <div class="lbl">Total PPPoE Secrets</div>
+        <div class="val" id="stat-total" style="color:white;">0</div>
+    </div>
+    <div class="kpi-card">
+        <div class="lbl">Active/Enabled</div>
+        <div class="val" id="stat-active" style="color:var(--success);">0</div>
+    </div>
+    <div class="kpi-card">
+        <div class="lbl">Disabled (Isolated)</div>
+        <div class="val" id="stat-disabled" style="color:var(--danger);">0</div>
+    </div>
+</div>
+
+<div class="form-panel">
+    <h3 style="margin:0 0 20px 0; font-weight:600;">Add New PPPoE Customer</h3>
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+        <div class="form-group">
+            <label>Username (PPPoE ID)</label>
+            <input type="text" id="add-username" class="form-control" autocomplete="off" placeholder="e.g. user_rumah1">
+        </div>
+        <div class="form-group">
+            <label>Password</label>
+            <input type="text" id="add-password" class="form-control" autocomplete="off" placeholder="e.g. secret123">
+        </div>
+        <div class="form-group">
+            <label>Profile (Bandwidth/Billing)</label>
+            <input type="text" id="add-profile" class="form-control" value="default" placeholder="e.g. default">
+        </div>
+        <div class="form-group" style="display:flex; align-items:flex-end;">
+            <button class="btn-act" id="add-btn" onclick="addPPPoE()" style="width:100%; height: 43px; justify-content: center;">Add User</button>
+        </div>
+    </div>
+</div>
+
+<div class="table-container">
+    <div style="display:flex; justify-content:space-between; margin-bottom:15px; align-items:center;">
+        <h3 style="margin:0; font-weight:600;">Customer PPPoE Secrets</h3>
+        <button class="btn-act" onclick="loadPPPoE()" style="padding: 8px 15px; font-size: 12px; background: rgba(14, 165, 233, 0.2); border: 1px solid var(--accent-secondary); color: var(--accent-secondary);">Refresh</button>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Username</th>
+                <th>Password</th>
+                <th>Service</th>
+                <th>Profile</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody id="p-tbody">
+            <tr><td colspan="6" style="text-align:center; color:var(--text-muted);">Loading...</td></tr>
+        </tbody>
+    </table>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.getElementById('loader').style.display = 'none';
+
+    async function loadPPPoE() {
+        const tb = document.getElementById('p-tbody');
+        tb.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted);">Loading...</td></tr>';
+        try {
+            const res = await fetch('/api/pppoe/list');
+            const data = await res.json();
+            if (data.success) {
+                let total = data.data.length;
+                let active = 0;
+                let disabled = 0;
+
+                const rows = data.data.map(u => {
+                    if (u.disabled) disabled++; else active++;
+                    const badge = u.disabled ? `<span class="badge b-disabled">Disabled</span>` : `<span class="badge b-active">Active</span>`;
+                    return `<tr>
+                        <td style="font-weight:600;">${u.name}</td>
+                        <td style="font-family:monospace;">${u.password}</td>
+                        <td>${u.service}</td>
+                        <td>${u.profile}</td>
+                        <td>${badge}</td>
+                        <td><button class="del-btn" onclick="delPPPoE('${u.name}')">Delete</button></td>
+                    </tr>`;
+                });
+
+                document.getElementById('stat-total').innerText = total;
+                document.getElementById('stat-active').innerText = active;
+                document.getElementById('stat-disabled').innerText = disabled;
+
+                if (!rows.length) {
+                    tb.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#a0a5b1;">No PPPoE users found.</td></tr>';
+                } else {
+                    tb.innerHTML = rows.join('');
+                }
+            } else {
+                showToast('Failed to load PPPoE users: ' + data.error, 'error');
+            }
+        } catch(e) {
+            showToast('Failed to load PPPoE', 'error');
+        }
+    }
+
+    async function addPPPoE() {
+        const un = document.getElementById('add-username').value;
+        const pw = document.getElementById('add-password').value;
+        const pr = document.getElementById('add-profile').value;
+
+        if(!un || !pw) return showToast('Username and password are required', 'error');
+
+        document.getElementById('add-btn').innerText = 'Adding...';
+        try {
+            const res = await fetch('/api/pppoe/add', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username: un, password: pw, profile: pr})
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast(`PPPoE user ${un} added successfully.`);
+                document.getElementById('add-username').value = '';
+                document.getElementById('add-password').value = '';
+                loadPPPoE();
+            } else {
+                showToast(data.error, 'error');
+            }
+        } catch(e) {
+            showToast('Add failed', 'error');
+        } finally {
+            document.getElementById('add-btn').innerText = 'Add User';
+        }
+    }
+
+    async function delPPPoE(un) {
+        if(!confirm(`Delete PPPoE user ${un}?`)) return;
+        try {
+            const res = await fetch(`/api/pppoe/delete/${un}`, { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                showToast(`Deleted ${un}`);
+                loadPPPoE();
+            } else {
+                showToast(data.error, 'error');
+            }
+        } catch(e) {
+            showToast('Delete failed', 'error');
+        }
+    }
+
+    loadPPPoE();
+</script>
+{% endblock %}

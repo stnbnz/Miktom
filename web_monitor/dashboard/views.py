@@ -26,7 +26,7 @@ from django.http import JsonResponse, StreamingHttpResponse
 from django.utils import timezone
 from datetime import datetime
 
-from .models import Voucher, Router, BackupLog, SystemMetrics, InterfaceMetrics, ActiveUser, NetworkTraffic, SystemAlert, VoucherUsage, ActivityLog, UserSession
+from .models import Voucher, Router, BackupLog, SystemMetrics, InterfaceMetrics, ActiveUser, NetworkTraffic, SystemAlert, VoucherUsage, ActivityLog, UserSession, AutomationRunLog
 
 def _get_active_router(request):
     router_id = request.session.get('active_router_id')
@@ -43,11 +43,23 @@ def _get_active_router(request):
 def _get_mikrotik_api_for_router(router):
     if not router:
         raise Exception("No router configured")
-    conn = routeros_api.RouterOsApiPool(
-        router.ip_address, username=router.username, password=router.password,
-        port=router.port, plaintext_login=True
+    login_errors = []
+    for plaintext in (True, False):
+        try:
+            conn = routeros_api.RouterOsApiPool(
+                router.ip_address,
+                username=router.username,
+                password=router.password,
+                port=router.port,
+                plaintext_login=plaintext
+            )
+            return conn, conn.get_api()
+        except Exception as e:
+            login_errors.append(str(e))
+    raise Exception(
+        f"Failed to login router '{router.name}' ({router.ip_address}:{router.port}). "
+        f"Please verify username/password in Settings. Detail: {' | '.join(login_errors)}"
     )
-    return conn, conn.get_api()
 
 def _log_activity(request, activity_type, description, router=None, metadata=None, success=True, error_message=""):
     """Helper function to log user activities"""
@@ -154,6 +166,21 @@ def router_status(request):
             banned_ips = len(api.get_resource('/ip/firewall/address-list').get(**{'list': 'AUTO-BANNED'}))
         except Exception: pass
 
+        # Build alerts list
+        alerts = []
+        time_now = datetime.now().strftime("%H:%M:%S")
+        if cpu_load > 80:
+            alerts.append({"type": "danger", "message": f"🔥 CPU is critically HIGH at {cpu_load}%", "time": time_now})
+        if ram_usage > 80:
+            alerts.append({"type": "danger", "message": f"🔥 RAM usage is HIGH at {ram_usage}%", "time": time_now})
+        if internet_status == "DOWN":
+            alerts.append({"type": "danger", "message": "🌐 INTERNET CONNECTION DOWN", "time": time_now})
+        for iface in interfaces_data:
+            if iface["status"] == "DOWN":
+                alerts.append({"type": "warning", "message": f"⚠️ Interface {iface['name']} is DOWN", "time": time_now})
+        if not alerts:
+            alerts.append({"type": "success", "message": "✅ System is running smoothly", "time": time_now})
+
         # Check overall state changes and aggregate alerts
         import threading
         messages_to_send = []
@@ -242,6 +269,41 @@ def router_status(request):
             "success": False,
             "error": str(e)
         })
+
+
+def system_health(request):
+    """Health check endpoint for UI and cron monitoring."""
+    try:
+        router = _get_active_router(request)
+        latest_metric = None
+        if router:
+            latest_metric = SystemMetrics.objects.filter(router=router).first()
+
+        latest_job = AutomationRunLog.objects.first()
+        return JsonResponse({
+            "success": True,
+            "server_time": timezone.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "database": "OK",
+            "active_router": {
+                "id": router.id if router else None,
+                "name": router.name if router else None,
+                "ip": router.ip_address if router else None,
+            },
+            "monitoring": {
+                "latest_metric_time": latest_metric.timestamp.strftime("%Y-%m-%d %H:%M:%S") if latest_metric else None,
+                "internet_status": latest_metric.internet_status if latest_metric else "UNKNOWN",
+                "cpu_load": latest_metric.cpu_load if latest_metric else None,
+                "ram_usage": latest_metric.ram_usage if latest_metric else None,
+            },
+            "automation": {
+                "last_status": latest_job.status if latest_job else "NO_RUN",
+                "last_task": latest_job.task_name if latest_job else None,
+                "last_started_at": latest_job.started_at.strftime("%Y-%m-%d %H:%M:%S") if latest_job else None,
+                "last_finished_at": latest_job.finished_at.strftime("%Y-%m-%d %H:%M:%S") if latest_job and latest_job.finished_at else None,
+            },
+        })
+    except Exception as e:
+        return JsonResponse({"success": False, "error": str(e)})
 
 import io
 import zipfile
@@ -449,7 +511,8 @@ def _remove_voucher_from_mikrotik(hotspot_user, code):
         if users and len(users) > 0:
             user_id = users[0].get('.id')
             if user_id:
-                hotspot_user.remove(id=user_id)
+                # routeros_api requires .id as keyword arg with the dot
+                hotspot_user.remove(**{'.id': user_id})
                 print(f"Removed {code} from MikroTik (ID: {user_id})")
                 return True
     except Exception as e:
@@ -618,10 +681,23 @@ def delete_vouchers_batch(request):
             
         deleted_from_mikrotik = 0
         deleted_from_db = 0
+        kicked_sessions = 0
         
         # Delete from MikroTik first, then from database
+        hotspot_active = api.get_resource('/ip/hotspot/active')
         for code in codes:
-            # Try to remove from MikroTik first
+            # Kick active hotspot session if online
+            try:
+                active_sessions = hotspot_active.get(**{'user': code})
+                for s in active_sessions:
+                    sid = s.get('.id')
+                    if sid:
+                        hotspot_active.remove(**{'.id': sid})
+                        kicked_sessions += 1
+            except Exception:
+                pass
+            
+            # Try to remove from MikroTik hotspot user
             if _remove_voucher_from_mikrotik(hotspot_user, code):
                 deleted_from_mikrotik += 1
             
@@ -644,11 +720,12 @@ def delete_vouchers_batch(request):
         _log_activity(
             request, 
             'voucher_batch_delete', 
-            f'Deleted {deleted_from_mikrotik} from MikroTik, {deleted_from_db} from database',
+            f'Deleted {deleted_from_mikrotik} from MikroTik, {deleted_from_db} from database, kicked {kicked_sessions} active sessions',
             router=router,
             metadata={
                 'deleted_from_mikrotik': deleted_from_mikrotik,
                 'deleted_from_database': deleted_from_db,
+                'kicked_sessions': kicked_sessions,
                 'total_requested': len(codes),
                 'codes': codes
             }
@@ -656,8 +733,10 @@ def delete_vouchers_batch(request):
 
         return JsonResponse({
             'success': True,
+            'deleted': deleted_from_db,
             'deleted_from_mikrotik': deleted_from_mikrotik,
             'deleted_from_db': deleted_from_db,
+            'kicked_sessions': kicked_sessions,
             'total': len(codes)
         })
     except Exception as e:
@@ -730,6 +809,16 @@ def delete_voucher(request, code):
         try:
             conn, api = _get_mikrotik_api_for_router(router)
             hotspot_user = api.get_resource('/ip/hotspot/user')
+            # Kick active hotspot session if online before removing user
+            try:
+                active_res = api.get_resource('/ip/hotspot/active')
+                active_sessions = active_res.get(**{'user': code})
+                for s in active_sessions:
+                    sid = s.get('.id')
+                    if sid:
+                        active_res.remove(**{'.id': sid})
+            except Exception:
+                pass
             _remove_voucher_from_mikrotik(hotspot_user, code)
             conn.disconnect()
         except Exception as e:
@@ -892,8 +981,139 @@ def manage_blocked_user(request):
         return JsonResponse({'success': False, 'error': str(e)})
 
 
+# =================================================
+# PPPOE MANAGEMENT
+# =================================================
+
+def pppoe_page(request):
+    """Render PPPoE Management page"""
+    return render(request, 'dashboard/pppoe.html')
+
+def get_pppoe_users(request):
+    """API Endpoint to list PPPoE Secrets from MikroTik"""
+    try:
+        router = _get_active_router(request)
+        if not router:
+            return JsonResponse({'success': False, 'error': 'No router configured'})
+            
+        conn, api = _get_mikrotik_api_for_router(router)
+        secrets = api.get_resource('/ppp/secret').get()
+        data = []
+        for s in secrets:
+            data.append({
+                'id': s.get('.id'),
+                'name': s.get('name'),
+                'password': s.get('password', '***'),
+                'profile': s.get('profile', 'default'),
+                'service': s.get('service', 'any'),
+                'disabled': s.get('disabled', 'false') == 'true'
+            })
+        conn.disconnect()
+        return JsonResponse({'success': True, 'data': data})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+@csrf_exempt
+def add_pppoe_user(request):
+    """API Endpoint to add a new PPPoE Secret"""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST only'})
+    try:
+        data = json_lib.loads(request.body)
+        username = data.get('username')
+        password = data.get('password')
+        profile = data.get('profile', 'default')
+        
+        if not username or not password:
+            return JsonResponse({'success': False, 'error': 'Username and password required'})
+            
+        router = _get_active_router(request)
+        if not router:
+            return JsonResponse({'success': False, 'error': 'No router configured'})
+            
+        conn, api = _get_mikrotik_api_for_router(router)
+        api.get_resource('/ppp/secret').add(
+            name=username,
+            password=password,
+            profile=profile,
+            service='pppoe'
+        )
+        conn.disconnect()
+        
+        _log_activity(request, 'user_kick', f'Added PPPoE user: {username}', router=router) # Using generic type
+        
+        return JsonResponse({'success': True})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+@csrf_exempt
+def delete_pppoe_user(request, username):
+    """API Endpoint to delete a PPPoE user by username — disconnects active session + removes secret from MikroTik"""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST only'})
+    try:
+        router = _get_active_router(request)
+        if not router:
+            return JsonResponse({'success': False, 'error': 'No router configured'})
+            
+        conn, api = _get_mikrotik_api_for_router(router)
+        
+        mikrotik_removed = False
+        session_disconnected = False
+
+        # 1. Disconnect active PPPoE session first (if any)
+        try:
+            active_res = api.get_resource('/ppp/active')
+            active_sessions = active_res.get(**{'name': username})
+            for session in active_sessions:
+                session_id = session.get('.id')
+                if session_id:
+                    active_res.remove(**{'.id': session_id})
+                    session_disconnected = True
+                    print(f"Disconnected active PPPoE session for {username} (ID: {session_id})")
+        except Exception as e:
+            print(f"Note: Could not disconnect active session for {username}: {e}")
+        
+        # 2. Remove the PPPoE secret from MikroTik
+        try:
+            secret_res = api.get_resource('/ppp/secret')
+            secrets = secret_res.get(**{'name': username})
+            if secrets:
+                secret_id = secrets[0].get('.id')
+                if secret_id:
+                    secret_res.remove(**{'.id': secret_id})
+                    mikrotik_removed = True
+                    print(f"Removed PPPoE secret for {username} (ID: {secret_id})")
+                else:
+                    print(f"Warning: PPPoE secret for {username} has no .id")
+            else:
+                print(f"PPPoE secret for {username} not found on MikroTik — may already be deleted")
+                mikrotik_removed = True  # Not an error if already gone
+        except Exception as e:
+            conn.disconnect()
+            return JsonResponse({'success': False, 'error': f'Failed to remove from MikroTik: {str(e)}'})
+        
+        conn.disconnect()
+        
+        _log_activity(
+            request,
+            'voucher_delete',
+            f'Deleted PPPoE user: {username} (mikrotik_removed={mikrotik_removed}, session_disconnected={session_disconnected})',
+            router=router,
+            metadata={'username': username, 'action': 'pppoe_delete', 'mikrotik_removed': mikrotik_removed}
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'PPPoE user {username} deleted from MikroTik',
+            'mikrotik_removed': mikrotik_removed,
+            'session_disconnected': session_disconnected
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+
 def settings_page(request):
-    """Render settings page"""
     return render(request, 'dashboard/settings.html')
 
 def get_routers(request):
@@ -1017,104 +1237,69 @@ def sse_updates(request):
                     try:
                         router = _get_active_router(request)
                         if router:
-                            connection, api = _get_mikrotik_api_for_router(router)
+                            # Fetch the latest metrics from the DB
+                            metric = SystemMetrics.objects.filter(router=router).first()
                             
-                            # System resources
-                            resource = api.get_resource('/system/resource').get()[0]
-                            cpu_load = int(resource.get("cpu-load", 0))
-                            total_mem = int(resource.get("total-memory", 1))
-                            free_mem = int(resource.get("free-memory", 0))
-                            ram_usage = int((1 - (free_mem / total_mem)) * 100)
-                            uptime = resource.get("uptime", "0s")
-                            version = resource.get("version", "Unknown")
-                            board = resource.get("board-name", "Unknown")
-                            
-                            # Interfaces
-                            interfaces_data = []
-                            interface_api = api.get_resource('/interface')
-                            interfaces = interface_api.get()
-                            for iface in interfaces:
-                                if iface.get("type", "") == "ether":
-                                    name = iface.get("name", "Unknown")
-                                    running = iface.get("running", "false")
-                                    status = "UP" if running == "true" else "DOWN"
-                                    tx_byte = int(iface.get("tx-byte", 0))
-                                    rx_byte = int(iface.get("rx-byte", 0))
-                                    
+                            if metric:
+                                interfaces = InterfaceMetrics.objects.filter(system_metric=metric)
+                                interfaces_data = []
+                                for iface in interfaces:
                                     interfaces_data.append({
-                                        "name": name,
-                                        "status": status,
-                                        "tx_byte": tx_byte,
-                                        "rx_byte": rx_byte,
+                                        "name": iface.name,
+                                        "status": iface.status,
+                                        "tx_byte": iface.tx_bytes,
+                                        "rx_byte": iface.rx_bytes,
                                     })
-                            
-                            # Ping test
-                            internet_status = "DOWN"
-                            ping_latency = "0"
-                            ping_result = api.get_resource('/').call("ping", {
-                                "address": "8.8.8.8",
-                                "count": "1"
-                            })
-                            if ping_result and int(ping_result[0].get("received", 0)) > 0:
-                                internet_status = "UP"
-                                time_val = ping_result[0].get("time", "0ms")
-                                if "ms" in time_val:
-                                    ping_latency = time_val.split("ms")[0]
-                            
-                            # Users count
-                            active_users = 0
-                            hotspot_users = len(api.get_resource('/ip/hotspot/active').get())
-                            ppp_users = len(api.get_resource('/ppp/active').get())
-                            active_users = hotspot_users + ppp_users
-                            
-                            banned_ips = len(api.get_resource('/ip/firewall/address-list').get(**{'list': 'AUTO-BANNED'}))
-                            
-                            # Build alerts
-                            alerts = []
-                            time_now = datetime.now().strftime("%H:%M:%S")
-                            if cpu_load > 80:
-                                alerts.append({"type": "danger", "message": f"🔥 CPU is critically HIGH at {cpu_load}%", "time": time_now})
-                            if ram_usage > 80:
-                                alerts.append({"type": "danger", "message": f"🔥 RAM usage is HIGH at {ram_usage}%", "time": time_now})
-                            if internet_status == "DOWN":
-                                alerts.append({"type": "danger", "message": "🌐 INTERNET CONNECTION DOWN", "time": time_now})
-                            for iface in interfaces_data:
-                                if iface["status"] == "DOWN":
-                                    alerts.append({"type": "warning", "message": f"⚠️ Interface {iface['name']} is DOWN", "time": time_now})
-                                else:
-                                    alerts.append({"type": "success", "message": f"✅ Interface {iface['name']} is UP", "time": time_now})
-                            
-                            if not alerts:
-                                alerts.append({"type": "success", "message": "✅ System is running smoothly", "time": time_now})
-                            
-                            connection.disconnect()
-                            
-                            data = {
-                                "cpu_load": cpu_load,
-                                "ram_usage": ram_usage,
-                                "free_mem_mb": free_mem // (1024 * 1024),
-                                "total_mem_mb": total_mem // (1024 * 1024),
-                                "uptime": uptime,
-                                "version": version,
-                                "board": board,
-                                "internet_status": internet_status,
-                                "ping_latency": ping_latency,
-                                "active_users": active_users,
-                                "banned_ips": banned_ips,
-                                "interfaces": interfaces_data,
-                                "alerts": alerts,
-                                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            }
+                                
+                                # Build alerts based on the metric
+                                alerts = []
+                                time_now = datetime.now().strftime("%H:%M:%S")
+                                if metric.cpu_load > 80:
+                                    alerts.append({"type": "danger", "message": f"🔥 CPU is critically HIGH at {metric.cpu_load}%", "time": time_now})
+                                if metric.ram_usage > 80:
+                                    alerts.append({"type": "danger", "message": f"🔥 RAM usage is HIGH at {metric.ram_usage}%", "time": time_now})
+                                if metric.internet_status == "DOWN":
+                                    alerts.append({"type": "danger", "message": "🌐 INTERNET CONNECTION DOWN", "time": time_now})
+                                for iface in interfaces_data:
+                                    if iface["status"] == "DOWN":
+                                        alerts.append({"type": "warning", "message": f"⚠️ Interface {iface['name']} is DOWN", "time": time_now})
+                                
+                                if not alerts:
+                                    alerts.append({"type": "success", "message": "✅ System is running smoothly", "time": time_now})
+                                
+                                data = {
+                                    "cpu_load": metric.cpu_load,
+                                    "ram_usage": metric.ram_usage,
+                                    "free_mem_mb": metric.free_memory_mb,
+                                    "total_mem_mb": metric.total_memory_mb,
+                                    "uptime": metric.uptime,
+                                    "version": metric.version,
+                                    "board": metric.board_name,
+                                    "internet_status": metric.internet_status,
+                                    "ping_latency": metric.ping_latency,
+                                    "active_users": metric.active_users,
+                                    "banned_ips": metric.banned_ips,
+                                    "interfaces": interfaces_data,
+                                    "alerts": alerts,
+                                    "timestamp": metric.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+                                }
+                            else:
+                                # Fallback to live polling when DB metrics are not ready yet.
+                                live_response = router_status(request)
+                                try:
+                                    live_data = json.loads(live_response.content.decode("utf-8"))
+                                    data = live_data
+                                except Exception:
+                                    data = {"error": "Dashboard data has not been generated by the background monitor yet."}
                         else:
                             data = {"error": "No router configured. Please add one in Settings."}
                     except Exception as e:
-                        # Fallback for dashboard if router disconnected
                         data = {
                             "cpu_load": 0, "ram_usage": 0, "free_mem_mb": 0, "total_mem_mb": 0,
-                            "uptime": "Disconnected", "version": "N/A", "board": "Unknown",
+                            "uptime": "Error", "version": "N/A", "board": "Unknown",
                             "internet_status": "DOWN", "ping_latency": "0", "active_users": 0, "banned_ips": 0,
                             "interfaces": [], 
-                            "alerts": [{"type": "danger", "message": f"Connection Error: {str(e)}", "time": datetime.now().strftime("%H:%M:%S")}],
+                            "alerts": [{"type": "danger", "message": f"Database Error: {str(e)}", "time": datetime.now().strftime("%H:%M:%S")}],
                             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         }
                         
@@ -1124,16 +1309,14 @@ def sse_updates(request):
                     try:
                         router = _get_active_router(request)
                         if router:
-                            conn, api = _get_mikrotik_api_for_router(router)
-                            active_sessions = api.get_resource('/ip/hotspot/active').get()
+                            # Instead of API, pull from DB which monitor-router populates
+                            active_sessions = ActiveUser.objects.filter(router=router, is_active=True)
                             for s in active_sessions:
-                                active_codes.add(s.get('user', ''))
-                            conn.disconnect()
+                                active_codes.add(s.user_id) # Usually user_id is the code
                     except Exception:
                         pass
                     
                     try:
-                        
                         vouchers = Voucher.objects.all()[:200]
                         voucher_data = []
                         for v in vouchers:
@@ -1199,55 +1382,26 @@ def sse_updates(request):
                         else:
                             active_list = []
                             blocked_list = []
-                            try:
-                                conn, api = _get_mikrotik_api_for_router(router)
+                            
+                            # Fetch active users from DB instead of hitting the MikroTik API continually
+                            db_active = ActiveUser.objects.filter(router=router, is_active=True)
+                            for u in db_active:
+                                active_list.append({
+                                    'id': u.id,  # Local DB id
+                                    'server': u.server,
+                                    'user': u.username,
+                                    'address': u.ip_address,
+                                    'mac_address': u.mac_address,
+                                    'uptime': u.uptime,
+                                    'bytes_in': u.bytes_in,
+                                    'bytes_out': u.bytes_out,
+                                    'type': u.session_type.capitalize()
+                                })
                                 
-                                # Hotspot Active users
-                                hotspot_active = api.get_resource('/ip/hotspot/active').get()
-                                for user in hotspot_active:
-                                    active_list.append({
-                                        'id': user.get('.id'),
-                                        'server': user.get('server', ''),
-                                        'user': user.get('user', ''),
-                                        'address': user.get('address', ''),
-                                        'mac_address': user.get('mac-address', ''),
-                                        'uptime': user.get('uptime', ''),
-                                        'bytes_in': int(user.get('bytes-in', 0)),
-                                        'bytes_out': int(user.get('bytes-out', 0)),
-                                        'type': 'Hotspot'
-                                    })
-                                
-                                # PPPoE Active users
-                                ppp_active = api.get_resource('/ppp/active').get()
-                                for user in ppp_active:
-                                    # PPPoE uses 'caller-id' for mac
-                                    active_list.append({
-                                        'id': user.get('.id'),
-                                        'server': user.get('service', 'pppoe'),
-                                        'user': user.get('name', ''),
-                                        'address': user.get('address', ''),
-                                        'mac_address': user.get('caller-id', ''),
-                                        'uptime': user.get('uptime', ''),
-                                        'bytes_in': 0, # PPP bytes usually in interface
-                                        'bytes_out': 0,
-                                        'type': 'PPPoE'
-                                    })
-                                
-                                # Find blocked MACs in Hotspot IP Binding
-                                bindings = api.get_resource('/ip/hotspot/ip-binding').get()
-                                for b in bindings:
-                                    if b.get('type') == 'blocked':
-                                        blocked_list.append({
-                                            'id': b.get('.id'),
-                                            'mac_address': b.get('mac-address', ''),
-                                            'address': b.get('address', ''),
-                                            'comment': b.get('comment', '')
-                                        })
-                                        
-                                conn.disconnect()
-                                data = {"users": active_list, "blocked": blocked_list}
-                            except Exception as e:
-                                data = {"error": f"Router Disconnected: {str(e)}", "users": [], "blocked": []}
+                            # If you want to sync blocked events, you can fetch from SecurityEvent or similar
+                            # Here we return a skeleton for blocked_list to prevent errors while we rely on DB
+                            
+                            data = {"users": active_list, "blocked": blocked_list}
                     except Exception as e:
                         data = {"error": str(e), "users": [], "blocked": []}
                 

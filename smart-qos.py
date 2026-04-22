@@ -9,8 +9,8 @@ sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web_mo
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'web_monitor.settings')
 django.setup()
 
-from dashboard.models import Router, ActivityLog
-from alert import send_telegram
+from dashboard.models import Router, ActivityLog, QoSState, QoSEvent
+from alert import send_telegram_markdown
 
 # ======================
 # ROUTER CONFIG
@@ -29,35 +29,32 @@ PASSWORD = router.password
 # QoS CONFIG
 # ======================
 
-QUEUE_NAME = "WiFi-Guest" 
+QUEUE_NAME = "WiFi-Guest"
 NORMAL_LIMIT = "10M/10M"
 THROTTLED_LIMIT = "2M/2M"
 
 WAN_INTERFACE = "ether1"
-SATURATION_THRESHOLD_MBPS = 45 
+SATURATION_THRESHOLD_MBPS = 45
 
 print("================================")
 print(" MikroTik Smart QoS Manager")
-print(" Time:", datetime.now())
+print(f" Time: {datetime.now()}")
 print(f" Router: {router.name} ({ROUTER_IP})")
 print("================================")
 
-# Get current QoS state from database (use latest ActivityLog with qos_change)
-latest_qos = ActivityLog.objects.filter(
+# Get current QoS state from database
+qos_state, _ = QoSState.objects.get_or_create(
     router=router,
-    activity_type='qos_change'
-).order_by('-timestamp').first()
-
-is_throttled = False
-if latest_qos and latest_qos.metadata:
-    is_throttled = latest_qos.metadata.get('is_throttled', False)
+    defaults={'is_throttled': False}
+)
+is_throttled = qos_state.is_throttled
 
 try:
     connection = routeros_api.RouterOsApiPool(
         ROUTER_IP,
         username=USERNAME,
         password=PASSWORD,
-        port=8728,
+        port=router.port,
         plaintext_login=True
     )
     api = connection.get_api()
@@ -65,7 +62,7 @@ try:
     # Get Queue
     queue_api = api.get_resource('/queue/simple')
     queues = queue_api.get()
-    
+
     target_queue = next((q for q in queues if q.get('name') == QUEUE_NAME), None)
 
     if not target_queue:
@@ -73,27 +70,50 @@ try:
     else:
         # Get interface traffic
         monitor_api = api.get_resource('/interface')
-        traffic = monitor_api.call('monitor-traffic', {'interface': WAN_INTERFACE, 'once': ''})[0]
-        
+        try:
+            traffic = monitor_api.call('monitor-traffic', {'interface': WAN_INTERFACE, 'once': ''})[0]
+        except Exception as e:
+            print(f"Warning: Could not get traffic for {WAN_INTERFACE}: {e}")
+            traffic = {}
+
         rx_bps = int(traffic.get('rx-bits-per-second', 0))
         tx_bps = int(traffic.get('tx-bits-per-second', 0))
-        
+
         rx_mbps = rx_bps / 1_000_000
         tx_mbps = tx_bps / 1_000_000
-        
-        print(f"Current traffic on {WAN_INTERFACE}: RX {rx_mbps:.2f} Mbps, TX {tx_mbps:.2f} Mbps")
-        
+
+        print(f"Traffic on {WAN_INTERFACE}: RX {rx_mbps:.2f} Mbps | TX {tx_mbps:.2f} Mbps")
+
         is_saturated = (rx_mbps > SATURATION_THRESHOLD_MBPS) or (tx_mbps > SATURATION_THRESHOLD_MBPS)
-        
+
         if is_saturated:
             if not is_throttled:
-                print(f"Network saturated. Activating QoS on '{QUEUE_NAME}'...")
+                print(f"Network saturated! Activating QoS on '{QUEUE_NAME}'...")
                 queue_api.set(id=target_queue['.id'], **{'max-limit': THROTTLED_LIMIT})
-                is_throttled = True
-                
-                alert_msg = f"📉 *SMART QoS ACTIVATED*\n\nNetwork traffic high on {WAN_INTERFACE}!\nGuest WiFi limited to {THROTTLED_LIMIT}"
-                send_telegram(alert_msg)
-                
+
+                # Update state in DB
+                qos_state.is_throttled = True
+                qos_state.save()
+
+                QoSEvent.objects.create(
+                    router=router,
+                    event_type='throttled',
+                    rx_mbps=rx_mbps,
+                    tx_mbps=tx_mbps,
+                    queue_name=QUEUE_NAME,
+                    limit_applied=THROTTLED_LIMIT,
+                    detail=f'Saturation threshold ({SATURATION_THRESHOLD_MBPS} Mbps) exceeded'
+                )
+
+                alert_msg = (
+                    f"📉 *SMART QoS ACTIVATED*\n\n"
+                    f"Network traffic exceeded {SATURATION_THRESHOLD_MBPS} Mbps on `{WAN_INTERFACE}`\n"
+                    f"• RX: `{rx_mbps:.2f} Mbps`\n"
+                    f"• TX: `{tx_mbps:.2f} Mbps`\n\n"
+                    f"Guest WiFi has been throttled to `{THROTTLED_LIMIT}`"
+                )
+                send_telegram_markdown(alert_msg)
+
                 ActivityLog.objects.create(
                     router=router,
                     activity_type='qos_change',
@@ -113,11 +133,30 @@ try:
             if is_throttled:
                 print(f"Network stable. Deactivating QoS on '{QUEUE_NAME}'...")
                 queue_api.set(id=target_queue['.id'], **{'max-limit': NORMAL_LIMIT})
-                is_throttled = False
-                
-                alert_msg = f"📈 *SMART QoS DEACTIVATED*\n\nNetwork traffic stable.\nGuest WiFi restored to {NORMAL_LIMIT}"
-                send_telegram(alert_msg)
-                
+
+                # Update state in DB
+                qos_state.is_throttled = False
+                qos_state.save()
+
+                QoSEvent.objects.create(
+                    router=router,
+                    event_type='restored',
+                    rx_mbps=rx_mbps,
+                    tx_mbps=tx_mbps,
+                    queue_name=QUEUE_NAME,
+                    limit_applied=NORMAL_LIMIT,
+                    detail='Traffic normalized, throttle removed'
+                )
+
+                alert_msg = (
+                    f"📈 *SMART QoS DEACTIVATED*\n\n"
+                    f"Network traffic normalized on `{WAN_INTERFACE}`\n"
+                    f"• RX: `{rx_mbps:.2f} Mbps`\n"
+                    f"• TX: `{tx_mbps:.2f} Mbps`\n\n"
+                    f"Guest WiFi restored to `{NORMAL_LIMIT}`"
+                )
+                send_telegram_markdown(alert_msg)
+
                 ActivityLog.objects.create(
                     router=router,
                     activity_type='qos_change',
@@ -135,86 +174,18 @@ try:
                 print("Network optimal. No QoS changes needed.")
 
     connection.disconnect()
-    print("QoS check completed successfully")
+    print("QoS check completed successfully.")
 
 except Exception as e:
-    print(f"Error: {e}")
-    ActivityLog.objects.create(
-        router=router,
-        activity_type='qos_change',
-        description='Smart QoS check failed',
-        metadata={'error': str(e)},
-        success=False,
-        error_message=str(e)
-    )
-
-try:
-    connection = routeros_api.RouterOsApiPool(
-        ROUTER_IP,
-        username=USERNAME,
-        password=PASSWORD,
-        port=8728,
-        plaintext_login=True
-    )
-    api = connection.get_api()
-
-    # Get Queue
-    queue_api = api.get_resource('/queue/simple')
-    queues = queue_api.get()
-    
-    target_queue = next((q for q in queues if q.get('name') == QUEUE_NAME), None)
-
-    if not target_queue:
-        print(f"Warning: Queue named '{QUEUE_NAME}' not found. Cannot perform Smart QoS.")
-    else:
-        # Get interface traffic
-        monitor_api = api.get_resource('/interface')
-        # We must use monitor-traffic. Note: This is an active command, we need to gather 1 sample.
-        # This requires raw api syntax for monitor-traffic.
-        traffic = monitor_api.call('monitor-traffic', {'interface': WAN_INTERFACE, 'once': ''})[0]
-        
-        rx_bps = int(traffic.get('rx-bits-per-second', 0))
-        tx_bps = int(traffic.get('tx-bits-per-second', 0))
-        
-        rx_mbps = rx_bps / 1_000_000
-        tx_mbps = tx_bps / 1_000_000
-        
-        print(f"Current traffic on {WAN_INTERFACE}: RX {rx_mbps:.2f} Mbps, TX {tx_mbps:.2f} Mbps")
-        
-        is_saturated = (rx_mbps > SATURATION_THRESHOLD_MBPS) or (tx_mbps > SATURATION_THRESHOLD_MBPS)
-        
-        if is_saturated:
-            if not state["is_throttled"]:
-                print(f"Network is saturated (> {SATURATION_THRESHOLD_MBPS} Mbps). Activating QoS Throttling on '{QUEUE_NAME}'...")
-                queue_api.set(id=target_queue['.id'], **{'max-limit': THROTTLED_LIMIT})
-                state["is_throttled"] = True
-                
-                alert_msg = "📉 *SMART QoS ACTIVATED*\n\n"
-                alert_msg += f"Network traffic is high on {WAN_INTERFACE}!\n"
-                alert_msg += f"Guest WiFi bandwidth has been temporarily limited to {THROTTLED_LIMIT}."
-                send_alert(alert_msg)
-            else:
-                print("Network remains saturated. QoS Throttling still active.")
-        else:
-            if state["is_throttled"]:
-                print(f"Network traffic stabilized. Deactivating QoS Throttling on '{QUEUE_NAME}'...")
-                queue_api.set(id=target_queue['.id'], **{'max-limit': NORMAL_LIMIT})
-                state["is_throttled"] = False
-                
-                alert_msg = "📈 *SMART QoS DEACTIVATED*\n\n"
-                alert_msg += f"Network traffic is stable.\n"
-                alert_msg += f"Guest WiFi bandwidth restored to {NORMAL_LIMIT}."
-                send_alert(alert_msg)
-            else:
-                print("Network traffic is optimal. No QoS changes required.")
-
-    connection.disconnect()
-    
-    # Save State
-    with open(STATE_FILE, "w") as f:
-        json.dump(state, f, indent=4)
-        
-    print("QoS check completed.")
-
-except Exception as e:
-    print("Error:", e)
+    print(f"Error during QoS check: {e}")
+    try:
+        ActivityLog.objects.create(
+            router=router,
+            activity_type='qos_change',
+            description='Smart QoS check failed',
+            metadata={'error': str(e)},
+            success=False,
+            error_message=str(e)
+        )
+    except Exception as db_err:
+        print(f"Also failed to log error to DB: {db_err}")

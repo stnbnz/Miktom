@@ -42,6 +42,24 @@ class Voucher(models.Model):
                 self.expires_at = now + timedelta(hours=self.duration_hours)
             self.save()
 
+class PPPoEUser(models.Model):
+    """PPPoE user yang disimpan di DB untuk sync dengan MikroTik"""
+    router = models.ForeignKey('Router', on_delete=models.CASCADE)
+    username = models.CharField(max_length=100)
+    password = models.CharField(max_length=100, blank=True)
+    profile = models.CharField(max_length=50, default='default')
+    service = models.CharField(max_length=20, default='pppoe')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        unique_together = ['router', 'username']
+        db_table = 'dashboard_pppoeuser'
+
+    def __str__(self):
+        return f"{self.username} ({self.profile})"
+
+
 class Router(models.Model):
     name = models.CharField(max_length=50)
     ip_address = models.CharField(max_length=50)
@@ -401,3 +419,25 @@ class MonitorState(models.Model):
 
     def __str__(self):
         return f"{self.router.name} monitor state"
+
+
+class AutomationRunLog(models.Model):
+    """Execution log for scheduled automation jobs."""
+    task_name = models.CharField(max_length=100, db_index=True)
+    router = models.ForeignKey(Router, on_delete=models.SET_NULL, null=True, blank=True)
+    started_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(max_length=20, default='RUNNING')  # RUNNING/SUCCESS/FAILED
+    summary = models.TextField(blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ['-started_at']
+        indexes = [
+            models.Index(fields=['task_name', '-started_at']),
+            models.Index(fields=['status', '-started_at']),
+        ]
+        db_table = 'dashboard_automationrunlog'
+
+    def __str__(self):
+        return f"{self.task_name} - {self.status}"

@@ -120,6 +120,28 @@
     .notif-container table { width: 100%; border-collapse: collapse; }
     .notif-container td { padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); color: var(--text-main); }
     .notif-container tr:hover td { background: rgba(255,255,255,0.02); }
+    .iface-card {
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 12px;
+        padding: 12px;
+        background: rgba(0,0,0,0.18);
+    }
+    .iface-status {
+        margin-top: 8px;
+        font-size: 12px;
+        font-weight: 700;
+        display: inline-block;
+        padding: 4px 8px;
+        border-radius: 999px;
+    }
+    .iface-status.iface-up {
+        color: #34d399;
+        background: rgba(52, 211, 153, 0.15);
+    }
+    .iface-status.iface-down {
+        color: #f87171;
+        background: rgba(248, 113, 113, 0.15);
+    }
 </style>
 {% endblock %}
 
@@ -226,6 +248,21 @@
                     Blocked IP addresses
                 </p>
             </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Automation Engine</span>
+                    <div class="card-icon" style="color: #22d3ee">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20v-6"></path><path d="M6 20V10"></path><path d="M18 20V4"></path></svg>
+                    </div>
+                </div>
+                <div class="card-value">
+                    <span id="automation-status" style="font-size: 24px;">NO_RUN</span>
+                </div>
+                <p style="margin:10px 0 0 0; font-size:13px; color:var(--text-muted);">
+                    Last run: <span id="automation-time">-</span>
+                </p>
+            </div>
         </div>
 
         <div class="bottom-grid" style="grid-template-columns: 2fr 1fr; margin-bottom: 25px;">
@@ -304,6 +341,7 @@
 <script>
 const UPDATE_INTERVAL = 3000;
         let isFirstLoad = true;
+        let lastErrorMessage = '';
 
         // Chart.js State
         let bwChart;
@@ -476,14 +514,46 @@ const UPDATE_INTERVAL = 3000;
             }
         }
 
+        async function fetchSystemHealth() {
+            try {
+                const res = await fetch('/api/system_health');
+                const data = await res.json();
+                if (!data.success) return;
+
+                const statusEl = document.getElementById('automation-status');
+                const timeEl = document.getElementById('automation-time');
+                statusEl.textContent = data.automation?.last_status || 'NO_RUN';
+                timeEl.textContent = data.automation?.last_finished_at || '-';
+            } catch (e) {
+                // Keep dashboard responsive even if health endpoint temporarily fails.
+            }
+        }
+
+        async function fetchLiveStatus() {
+            try {
+                const res = await fetch('/api/router_status');
+                const data = await res.json();
+                if (data && data.success) {
+                    updateDashboard(data);
+                }
+            } catch (e) {
+                // SSE remains active as fallback channel.
+            }
+        }
+
         function showError(msg) {
-            // Update the top UI to indicate offline, bypassing bottom error toast
+            const errMsg = msg || 'Disconnected from router';
             document.getElementById('main-status').classList.add('offline');
             document.getElementById('internet-text').textContent = 'Disconnected';
+            document.getElementById('r-version').textContent = 'Router Unreachable';
+            if (errMsg !== lastErrorMessage) {
+                showActionToast(errMsg, 'error');
+                lastErrorMessage = errMsg;
+            }
         }
 
         function hideError() {
-            // No longer needed
+            lastErrorMessage = '';
         }
 
         function showActionToast(msg, type) {
@@ -675,8 +745,9 @@ const UPDATE_INTERVAL = 3000;
             }
         }
 
-        // Cycle
-        fetchStatus();
-        // Auto-refresh is now handled by base.html
+        fetchSystemHealth();
+        fetchLiveStatus();
+        setInterval(fetchSystemHealth, 20000);
+        setInterval(fetchLiveStatus, 5000);
 </script>
 {% endblock %}
