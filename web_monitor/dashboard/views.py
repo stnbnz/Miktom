@@ -903,9 +903,39 @@ def active_users_data(request):
                 })
         except Exception:
             pass
+
+        try:
+            ppp_active = api.get_resource('/ppp/active').get()
+            for user in ppp_active:
+                active_list.append({
+                    'id': user.get('.id'),
+                    'server': user.get('service', ''),
+                    'user': user.get('name', ''),
+                    'address': user.get('address', ''),
+                    'mac_address': user.get('caller-id', ''),
+                    'uptime': user.get('uptime', ''),
+                    'bytes_in': 0, # PPP active doesn't show bytes by default
+                    'bytes_out': 0,
+                    'type': 'PPPoE'
+                })
+        except Exception:
+            pass
+            
+        blocked_list = []
+        try:
+            bindings = api.get_resource('/ip/hotspot/ip-binding').get(**{'type': 'blocked'})
+            for b in bindings:
+                blocked_list.append({
+                    'id': b.get('.id'),
+                    'mac_address': b.get('mac-address', ''),
+                    'address': b.get('address', ''),
+                    'comment': b.get('comment', '')
+                })
+        except Exception:
+            pass
             
         conn.disconnect()
-        return JsonResponse({'success': True, 'data': active_list})
+        return JsonResponse({'success': True, 'users': active_list, 'blocked': blocked_list})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
 
@@ -988,12 +1018,31 @@ def manage_blocked_user(request):
                 else:
                     bindings.add(**{'mac-address': mac_address, 'type': 'blocked', 'comment': 'Blocked via Dashboard'})
                 
+                # Also block from WiFi if applicable
+                try:
+                    acl = api.get_resource('/interface/wireless/access-list')
+                    acl_existing = acl.get(**{'mac-address': mac_address})
+                    if not acl_existing:
+                        acl.add(**{'mac-address': mac_address, 'authentication': 'no', 'forwarding': 'no', 'comment': 'Blocked via Dashboard'})
+                except Exception:
+                    pass
+                
                 _log_activity(request, 'security_ban', f'Blocked MAC: {mac_address}', router=router)
                 
             elif action == 'unblock':
                 if existing and len(existing) > 0:
                     for b in existing:
                         bindings.remove(id=b.get('.id'))
+                
+                # Also unblock from WiFi if applicable
+                try:
+                    acl = api.get_resource('/interface/wireless/access-list')
+                    acl_existing = acl.get(**{'mac-address': mac_address})
+                    if acl_existing:
+                        for a in acl_existing:
+                            acl.remove(id=a.get('.id'))
+                except Exception:
+                    pass
                 
                 _log_activity(request, 'security_ban', f'Unblocked MAC: {mac_address}', router=router)
                 
@@ -1409,23 +1458,56 @@ def sse_updates(request):
                             active_list = []
                             blocked_list = []
                             
-                            # Fetch active users from DB instead of hitting the MikroTik API continually
-                            db_active = ActiveUser.objects.filter(router=router, is_active=True)
-                            for u in db_active:
-                                active_list.append({
-                                    'id': u.id,  # Local DB id
-                                    'server': u.server,
-                                    'user': u.username,
-                                    'address': u.ip_address,
-                                    'mac_address': u.mac_address,
-                                    'uptime': u.uptime,
-                                    'bytes_in': u.bytes_in,
-                                    'bytes_out': u.bytes_out,
-                                    'type': u.session_type.capitalize()
-                                })
-                                
-                            # If you want to sync blocked events, you can fetch from SecurityEvent or similar
-                            # Here we return a skeleton for blocked_list to prevent errors while we rely on DB
+                            # Fetch live data from MikroTik API
+                            conn, api = _get_mikrotik_api_for_router(router)
+                            
+                            try:
+                                hotspot_active = api.get_resource('/ip/hotspot/active').get()
+                                for user in hotspot_active:
+                                    active_list.append({
+                                        'id': user.get('.id'),
+                                        'server': user.get('server', ''),
+                                        'user': user.get('user', ''),
+                                        'address': user.get('address', ''),
+                                        'mac_address': user.get('mac-address', ''),
+                                        'uptime': user.get('uptime', ''),
+                                        'bytes_in': int(user.get('bytes-in', 0)),
+                                        'bytes_out': int(user.get('bytes-out', 0)),
+                                        'type': 'Hotspot'
+                                    })
+                            except Exception:
+                                pass
+
+                            try:
+                                ppp_active = api.get_resource('/ppp/active').get()
+                                for user in ppp_active:
+                                    active_list.append({
+                                        'id': user.get('.id'),
+                                        'server': user.get('service', ''),
+                                        'user': user.get('name', ''),
+                                        'address': user.get('address', ''),
+                                        'mac_address': user.get('caller-id', ''),
+                                        'uptime': user.get('uptime', ''),
+                                        'bytes_in': 0,
+                                        'bytes_out': 0,
+                                        'type': 'PPPoE'
+                                    })
+                            except Exception:
+                                pass
+
+                            try:
+                                bindings = api.get_resource('/ip/hotspot/ip-binding').get(**{'type': 'blocked'})
+                                for b in bindings:
+                                    blocked_list.append({
+                                        'id': b.get('.id'),
+                                        'mac_address': b.get('mac-address', ''),
+                                        'address': b.get('address', ''),
+                                        'comment': b.get('comment', '')
+                                    })
+                            except Exception:
+                                pass
+
+                            conn.disconnect()
                             
                             data = {"users": active_list, "blocked": blocked_list}
                     except Exception as e:
