@@ -538,6 +538,7 @@ def generate_vouchers(request):
         custom_price = data.get('price', None)
         custom_duration = data.get('duration_hours', None)
         duration_unit = data.get('duration_unit', 'hour')
+        bandwidth = data.get('bandwidth', '')
 
         quantity = max(1, min(quantity, 100))
 
@@ -596,13 +597,17 @@ def generate_vouchers(request):
 
             # Push to MikroTik first. If it fails mid-way, it stops and throws error.
             try:
-                hotspot_user.add(**{
+                user_args = {
                     'name':    code,
                     'password': password,
                     'profile': 'default',
                     'comment': f'Voucher {duration_label} - Batch {batch_id}',
                     'limit-uptime': f'{hours}h',
-                })
+                }
+                if bandwidth:
+                    user_args['rate-limit'] = bandwidth
+
+                hotspot_user.add(**user_args)
             except Exception as e:
                 # Disconnect and return early if router disconnects mid-way
                 if conn:

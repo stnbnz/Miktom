@@ -257,6 +257,18 @@
             <label>Custom Price (Optional, override profile)</label>
             <input type="number" id="gen-price" class="form-control" placeholder="e.g. 5000">
         </div>
+        <div class="form-group">
+            <label>Bandwidth Limit (Optional)</label>
+            <select id="gen-bandwidth" class="form-control" style="padding: 12px 15px;">
+                <option value="">Unlimited (Default)</option>
+                <option value="512k/512k">512 Kbps</option>
+                <option value="1M/1M">1 Mbps</option>
+                <option value="2M/2M">2 Mbps</option>
+                <option value="3M/3M">3 Mbps</option>
+                <option value="5M/5M">5 Mbps</option>
+                <option value="10M/10M">10 Mbps</option>
+            </select>
+        </div>
         <button class="btn-act" id="gen-btn" onclick="generateVouchers()">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
             <span id="gen-lbl">Generate & Push</span>
@@ -420,10 +432,11 @@ let t=0, a=0, u=0, onl=0, exp=0;
         try {
             const dur = document.getElementById('gen-duration').value;
         const unit = document.getElementById('gen-unit').value;
+        const bnd = document.getElementById('gen-bandwidth').value;
         const res = await fetch('/api/voucher/generate', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ profile: sel_prof, quantity: qty, duration_hours: dur ? parseInt(dur) : null, duration_unit: unit, price: prc ? parseInt(prc) : null })
+                body: JSON.stringify({ profile: sel_prof, quantity: qty, duration_hours: dur ? parseInt(dur) : null, duration_unit: unit, price: prc ? parseInt(prc) : null, bandwidth: bnd })
             });
             const dat = await res.json();
             if(dat.success) {
