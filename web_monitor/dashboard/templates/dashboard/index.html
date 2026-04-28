@@ -234,35 +234,6 @@
                 </p>
             </div>
 
-            <div class="card">
-                <div class="card-header">
-                    <span class="card-title">Security Shield</span>
-                    <div class="card-icon" style="color: var(--danger)">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
-                    </div>
-                </div>
-                <div class="card-value">
-                    <span id="banned-ips-val">0</span>
-                </div>
-                <p style="margin:10px 0 0 0; font-size:13px; color:var(--text-muted);">
-                    Blocked IP addresses
-                </p>
-            </div>
-
-            <div class="card">
-                <div class="card-header">
-                    <span class="card-title">Automation Engine</span>
-                    <div class="card-icon" style="color: #22d3ee">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20v-6"></path><path d="M6 20V10"></path><path d="M18 20V4"></path></svg>
-                    </div>
-                </div>
-                <div class="card-value">
-                    <span id="automation-status" style="font-size: 24px;">NO_RUN</span>
-                </div>
-                <p style="margin:10px 0 0 0; font-size:13px; color:var(--text-muted);">
-                    Last run: <span id="automation-time">-</span>
-                </p>
-            </div>
         </div>
 
         <div class="bottom-grid" style="grid-template-columns: 2fr 1fr; margin-bottom: 25px;">
@@ -465,7 +436,6 @@ const UPDATE_INTERVAL = 3000;
                 // Update New Metrics
                 document.getElementById('ping-text').textContent = data.ping_latency + ' ms';
                 document.getElementById('active-users-val').textContent = data.active_users;
-                document.getElementById('banned-ips-val').textContent = data.banned_ips;
 
                 // Update Internet Status
                 const badge = document.getElementById('main-status');
@@ -514,20 +484,7 @@ const UPDATE_INTERVAL = 3000;
             }
         }
 
-        async function fetchSystemHealth() {
-            try {
-                const res = await fetch('/api/system_health');
-                const data = await res.json();
-                if (!data.success) return;
 
-                const statusEl = document.getElementById('automation-status');
-                const timeEl = document.getElementById('automation-time');
-                statusEl.textContent = data.automation?.last_status || 'NO_RUN';
-                timeEl.textContent = data.automation?.last_finished_at || '-';
-            } catch (e) {
-                // Keep dashboard responsive even if health endpoint temporarily fails.
-            }
-        }
 
         async function fetchLiveStatus() {
             try {
@@ -745,9 +702,7 @@ const UPDATE_INTERVAL = 3000;
             }
         }
 
-        fetchSystemHealth();
         fetchLiveStatus();
-        setInterval(fetchSystemHealth, 20000);
         setInterval(fetchLiveStatus, 5000);
 </script>
 {% endblock %}
