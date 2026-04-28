@@ -646,6 +646,7 @@ def generate_vouchers(request):
                 duration_label=duration_label,
                 price=price,
                 batch=batch_id,
+                bandwidth=bandwidth if bandwidth else 'Unlimited'
             )
             created_codes.append(code)
 
@@ -808,6 +809,7 @@ def get_vouchers(request):
                 'profile_label':  profile_label,
                 'duration_hours': v.duration_hours,
                 'price':          v.price,
+                'bandwidth':      v.bandwidth,
                 'is_used':        v.is_used,
                 'online':         online,
                 'expired':        expired,

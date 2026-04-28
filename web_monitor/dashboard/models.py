@@ -22,6 +22,7 @@ class Voucher(models.Model):
     expires_at   = models.DateTimeField(null=True, blank=True)
     is_used      = models.BooleanField(default=False)
     batch        = models.CharField(max_length=50, blank=True)  # ID batch generate
+    bandwidth    = models.CharField(max_length=20, default='Unlimited')
 
     class Meta:
         ordering = ['-created_at']

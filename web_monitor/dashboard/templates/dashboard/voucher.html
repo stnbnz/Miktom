@@ -288,6 +288,7 @@
                 <th>Code</th>
                 <th>Profile</th>
                 <th>Price</th>
+                <th>Bandwidth</th>
                 <th>Status</th>
                 <th>Expires</th>
                 <th>Created</th>
@@ -408,6 +409,7 @@ let t=0, a=0, u=0, onl=0, exp=0;
                 <td style="font-family:monospace; font-weight:bold; color:var(--accent-secondary); font-size:16px; cursor:pointer; text-decoration:underline; text-decoration-color:rgba(0,240,255,0.3); text-underline-offset:4px;" onclick="openDetail('${v.code}')" title="Click to view credentials">${v.code} <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:4px; opacity:0.7;"><path d="M15 3h6v6"></path><path d="M10 14L21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg></td>
                 <td>${v.profile_label}</td>
                 <td>Rp ${v.price.toLocaleString()}</td>
+                <td><span style="font-weight:600; color:var(--text-main);">${v.bandwidth || 'Unlimited'}</span></td>
                 <td>${b}</td>
                 <td>${v.expires_at || '-'}</td>
                 <td>${v.created_at}</td>
