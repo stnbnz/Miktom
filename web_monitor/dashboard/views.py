@@ -584,8 +584,29 @@ def generate_vouchers(request):
                 return JsonResponse({'success': False, 'error': 'No router configured'})
             conn, api = _get_mikrotik_api_for_router(router)
             hotspot_user = api.get_resource('/ip/hotspot/user')
+            hotspot_profile = api.get_resource('/ip/hotspot/user/profile')
         except Exception as e:
             return JsonResponse({'success': False, 'error': f'Router Disconnected: Tidak dapat membuat voucher saat router offline. Detail: {str(e)}'})
+
+        # Setup Profile if bandwidth is specified
+        mikrotik_profile = 'default'
+        if bandwidth:
+            mikrotik_profile = f'Profile_{bandwidth.replace("/", "_")}'
+            try:
+                existing_profiles = hotspot_profile.get(**{'name': mikrotik_profile})
+                if not existing_profiles:
+                    hotspot_profile.add(**{
+                        'name': mikrotik_profile,
+                        'rate-limit': bandwidth,
+                        'shared-users': '1',
+                        'transparent-proxy': 'yes'
+                    })
+            except Exception as e:
+                # Disconnect and return early
+                if conn:
+                    try: conn.disconnect()
+                    except: pass
+                return JsonResponse({'success': False, 'error': f'Failed to setup bandwidth profile {mikrotik_profile}: {str(e)}'})
 
         created_codes = []
         for _ in range(quantity):
@@ -600,12 +621,10 @@ def generate_vouchers(request):
                 user_args = {
                     'name':    code,
                     'password': password,
-                    'profile': 'default',
+                    'profile': mikrotik_profile,
                     'comment': f'Voucher {duration_label} - Batch {batch_id}',
                     'limit-uptime': f'{hours}h',
                 }
-                if bandwidth:
-                    user_args['rate-limit'] = bandwidth
 
                 hotspot_user.add(**user_args)
             except Exception as e:
