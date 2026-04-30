@@ -800,6 +800,12 @@ def get_vouchers(request):
                     else:
                         profile_label = v.profile
             
+            if v.expires_at:
+                expired = timezone.now() >= v.expires_at
+                
+            if online and not v.is_used:
+                v.mark_used()
+            
             data.append({
                 'id':             v.id,
                 'code':           v.code,
@@ -1391,24 +1397,49 @@ def sse_updates(request):
                 elif current_url == 'voucher':
                     # Get voucher data
                     active_codes = set()
+                    active_sessions_mikrotik = []
                     try:
                         router = _get_active_router(request)
                         if router:
-                            # Instead of API, pull from DB which monitor-router populates
-                            active_sessions = ActiveUser.objects.filter(router=router, is_active=True)
-                            for s in active_sessions:
-                                active_codes.add(s.user_id) # Usually user_id is the code
+                            conn, api = _get_mikrotik_api_for_router(router)
+                            active_sessions_mikrotik = api.get_resource('/ip/hotspot/active').get()
+                            for s in active_sessions_mikrotik:
+                                active_codes.add(s.get('user', ''))
+                            
+                            hotspot_user_api = api.get_resource('/ip/hotspot/user')
                     except Exception:
                         pass
                     
                     try:
                         vouchers = Voucher.objects.all()[:200]
                         voucher_data = []
+                        now = timezone.now()
                         for v in vouchers:
                             online = v.code in active_codes
+                            
+                            if online and not v.is_used:
+                                v.mark_used()
+                                
                             expired = False
                             if v.expires_at:
-                                expired = timezone.now() >= v.expires_at
+                                expired = now >= v.expires_at
+                                
+                            # Absolute expiration handling directly in SSE (if cron isn't running)
+                            if expired and router:
+                                try:
+                                    # Kick if online
+                                    if online:
+                                        session = next((s for s in active_sessions_mikrotik if s.get('user') == v.code), None)
+                                        if session and session.get('id'):
+                                            api.get_resource('/ip/hotspot/active').remove(id=session.get('id'))
+                                            online = False
+                                    
+                                    # Disable user in mikrotik
+                                    users = hotspot_user_api.get(name=v.code)
+                                    if users and users[0].get('disabled') != 'true':
+                                        hotspot_user_api.set(id=users[0].get('id'), disabled='yes')
+                                except Exception:
+                                    pass
                             
                             if v.duration_label:
                                 profile_label = v.duration_label
@@ -1428,6 +1459,7 @@ def sse_updates(request):
                                 'profile_label': profile_label,
                                 'duration_hours': v.duration_hours,
                                 'price': v.price,
+                                'bandwidth': v.bandwidth,
                                 'is_used': v.is_used,
                                 'online': online,
                                 'expired': expired,
