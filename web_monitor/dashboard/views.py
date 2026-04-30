@@ -509,10 +509,9 @@ def _remove_voucher_from_mikrotik(hotspot_user, code):
     try:
         users = hotspot_user.get(**{'name': code})
         if users and len(users) > 0:
-            user_id = users[0].get('.id')
+            user_id = users[0].get('id')
             if user_id:
-                # routeros_api requires .id as keyword arg with the dot
-                hotspot_user.remove(**{'.id': user_id})
+                hotspot_user.remove(id=user_id)
                 print(f"Removed {code} from MikroTik (ID: {user_id})")
                 return True
     except Exception as e:
@@ -715,9 +714,9 @@ def delete_vouchers_batch(request):
             try:
                 active_sessions = hotspot_active.get(**{'user': code})
                 for s in active_sessions:
-                    sid = s.get('.id')
+                    sid = s.get('id')
                     if sid:
-                        hotspot_active.remove(**{'.id': sid})
+                        hotspot_active.remove(id=sid)
                         kicked_sessions += 1
             except Exception:
                 pass
@@ -840,9 +839,9 @@ def delete_voucher(request, code):
                 active_res = api.get_resource('/ip/hotspot/active')
                 active_sessions = active_res.get(**{'user': code})
                 for s in active_sessions:
-                    sid = s.get('.id')
+                    sid = s.get('id')
                     if sid:
-                        active_res.remove(**{'.id': sid})
+                        active_res.remove(id=sid)
             except Exception:
                 pass
             _remove_voucher_from_mikrotik(hotspot_user, code)
@@ -891,7 +890,7 @@ def active_users_data(request):
             hotspot_active = api.get_resource('/ip/hotspot/active').get()
             for user in hotspot_active:
                 active_list.append({
-                    'id': user.get('.id'),
+                    'id': user.get('id'),
                     'server': user.get('server', ''),
                     'user': user.get('user', ''),
                     'address': user.get('address', ''),
@@ -908,7 +907,7 @@ def active_users_data(request):
             ppp_active = api.get_resource('/ppp/active').get()
             for user in ppp_active:
                 active_list.append({
-                    'id': user.get('.id'),
+                    'id': user.get('id'),
                     'server': user.get('service', ''),
                     'user': user.get('name', ''),
                     'address': user.get('address', ''),
@@ -926,7 +925,7 @@ def active_users_data(request):
             bindings = api.get_resource('/ip/hotspot/ip-binding').get(**{'type': 'blocked'})
             for b in bindings:
                 blocked_list.append({
-                    'id': b.get('.id'),
+                    'id': b.get('id'),
                     'mac_address': b.get('mac-address', ''),
                     'address': b.get('address', ''),
                     'comment': b.get('comment', '')
@@ -1008,13 +1007,13 @@ def manage_blocked_user(request):
                 try:
                     active = api.get_resource('/ip/hotspot/active').get(**{'mac-address': mac_address})
                     if active and len(active) > 0:
-                        api.get_resource('/ip/hotspot/active').remove(id=active[0].get('.id'))
+                        api.get_resource('/ip/hotspot/active').remove(id=active[0].get('id'))
                 except Exception:
                     pass
                 
                 # Update or Add binding
                 if existing and len(existing) > 0:
-                    bindings.set(id=existing[0].get('.id'), type='blocked', comment='Blocked via Dashboard')
+                    bindings.set(id=existing[0].get('id'), type='blocked', comment='Blocked via Dashboard')
                 else:
                     bindings.add(**{'mac-address': mac_address, 'type': 'blocked', 'comment': 'Blocked via Dashboard'})
                 
@@ -1030,17 +1029,28 @@ def manage_blocked_user(request):
                 _log_activity(request, 'security_ban', f'Blocked MAC: {mac_address}', router=router)
                 
             elif action == 'unblock':
+                # Try getting existing by upper/lower case to be safe
+                if not existing:
+                    existing = bindings.get(**{'mac-address': mac_address.lower()})
+                if not existing:
+                    existing = bindings.get(**{'mac-address': mac_address.upper()})
+                    
                 if existing and len(existing) > 0:
                     for b in existing:
-                        bindings.remove(id=b.get('.id'))
+                        bindings.remove(id=b.get('id'))
                 
                 # Also unblock from WiFi if applicable
                 try:
                     acl = api.get_resource('/interface/wireless/access-list')
                     acl_existing = acl.get(**{'mac-address': mac_address})
+                    if not acl_existing:
+                        acl_existing = acl.get(**{'mac-address': mac_address.lower()})
+                    if not acl_existing:
+                        acl_existing = acl.get(**{'mac-address': mac_address.upper()})
+                        
                     if acl_existing:
                         for a in acl_existing:
-                            acl.remove(id=a.get('.id'))
+                            acl.remove(id=a.get('id'))
                 except Exception:
                     pass
                 
@@ -1076,7 +1086,7 @@ def get_pppoe_users(request):
         data = []
         for s in secrets:
             data.append({
-                'id': s.get('.id'),
+                'id': s.get('id'),
                 'name': s.get('name'),
                 'password': s.get('password', '***'),
                 'profile': s.get('profile', 'default'),
@@ -1141,9 +1151,9 @@ def delete_pppoe_user(request, username):
             active_res = api.get_resource('/ppp/active')
             active_sessions = active_res.get(**{'name': username})
             for session in active_sessions:
-                session_id = session.get('.id')
+                session_id = session.get('id')
                 if session_id:
-                    active_res.remove(**{'.id': session_id})
+                    active_res.remove(id=session_id)
                     session_disconnected = True
                     print(f"Disconnected active PPPoE session for {username} (ID: {session_id})")
         except Exception as e:
@@ -1154,13 +1164,13 @@ def delete_pppoe_user(request, username):
             secret_res = api.get_resource('/ppp/secret')
             secrets = secret_res.get(**{'name': username})
             if secrets:
-                secret_id = secrets[0].get('.id')
+                secret_id = secrets[0].get('id')
                 if secret_id:
-                    secret_res.remove(**{'.id': secret_id})
+                    secret_res.remove(id=secret_id)
                     mikrotik_removed = True
                     print(f"Removed PPPoE secret for {username} (ID: {secret_id})")
                 else:
-                    print(f"Warning: PPPoE secret for {username} has no .id")
+                    print(f"Warning: PPPoE secret for {username} has no id")
             else:
                 print(f"PPPoE secret for {username} not found on MikroTik — may already be deleted")
                 mikrotik_removed = True  # Not an error if already gone
@@ -1465,7 +1475,7 @@ def sse_updates(request):
                                 hotspot_active = api.get_resource('/ip/hotspot/active').get()
                                 for user in hotspot_active:
                                     active_list.append({
-                                        'id': user.get('.id'),
+                                        'id': user.get('id'),
                                         'server': user.get('server', ''),
                                         'user': user.get('user', ''),
                                         'address': user.get('address', ''),
@@ -1482,7 +1492,7 @@ def sse_updates(request):
                                 ppp_active = api.get_resource('/ppp/active').get()
                                 for user in ppp_active:
                                     active_list.append({
-                                        'id': user.get('.id'),
+                                        'id': user.get('id'),
                                         'server': user.get('service', ''),
                                         'user': user.get('name', ''),
                                         'address': user.get('address', ''),
@@ -1499,7 +1509,7 @@ def sse_updates(request):
                                 bindings = api.get_resource('/ip/hotspot/ip-binding').get(**{'type': 'blocked'})
                                 for b in bindings:
                                     blocked_list.append({
-                                        'id': b.get('.id'),
+                                        'id': b.get('id'),
                                         'mac_address': b.get('mac-address', ''),
                                         'address': b.get('address', ''),
                                         'comment': b.get('comment', '')
