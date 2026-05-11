@@ -503,6 +503,33 @@ const UPDATE_INTERVAL = 3000;
             document.getElementById('main-status').classList.add('offline');
             document.getElementById('internet-text').textContent = 'Disconnected';
             document.getElementById('r-version').textContent = 'Router Unreachable';
+            document.getElementById('cpu-val').textContent = '0';
+            updateProgressBar('cpu-bar', 0);
+            document.getElementById('ram-val').textContent = '0';
+            document.getElementById('mem-free').textContent = '0';
+            document.getElementById('mem-total').textContent = '0';
+            updateProgressBar('ram-bar', 0);
+            document.getElementById('active-users-val').textContent = '0';
+            document.getElementById('r-uptime').textContent = 'Offline';
+            document.getElementById('r-board').textContent = 'Unknown';
+            
+            // Hide all dashboard content
+            document.querySelector('.grid').style.display = 'none';
+            document.querySelectorAll('.bottom-grid').forEach(el => el.style.display = 'none');
+            document.querySelector('.header-info-right').style.display = 'none';
+            document.querySelectorAll('.btn-backup').forEach(btn => btn.disabled = true);
+            
+            if (!document.getElementById('disconnected-msg')) {
+                const msgDiv = document.createElement('div');
+                msgDiv.id = 'disconnected-msg';
+                msgDiv.innerHTML = `<div style="text-align:center; padding: 100px 20px;">
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:20px; opacity: 0.8;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    <h2 style="margin:0 0 10px 0; color:var(--danger);">Router Disconnected</h2>
+                    <p style="color:var(--text-muted);">Please check the physical connection, or ensure the background monitor is running.</p>
+                </div>`;
+                document.querySelector('.header-info').insertAdjacentElement('afterend', msgDiv);
+            }
+            
             if (errMsg !== lastErrorMessage) {
                 showActionToast(errMsg, 'error');
                 lastErrorMessage = errMsg;
@@ -511,6 +538,12 @@ const UPDATE_INTERVAL = 3000;
 
         function hideError() {
             lastErrorMessage = '';
+            document.querySelector('.grid').style.display = 'grid';
+            document.querySelectorAll('.bottom-grid').forEach(el => el.style.display = 'grid');
+            document.querySelector('.header-info-right').style.display = 'flex';
+            document.querySelectorAll('.btn-backup').forEach(btn => btn.disabled = false);
+            const msg = document.getElementById('disconnected-msg');
+            if (msg) msg.remove();
         }
 
         function showActionToast(msg, type) {

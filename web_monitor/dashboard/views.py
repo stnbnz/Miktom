@@ -872,10 +872,15 @@ def print_vouchers(request):
         vouchers = Voucher.objects.filter(code__in=codes)
 
     profiles = PROFILE_DURATION
+    
+    router = _get_active_router(request)
+    router_ip = router.ip_address if router else '192.168.88.1'
+    
     return render(request, 'dashboard/voucher_print.html', {
         'vouchers': vouchers,
         'profiles': profiles,
         'print_time': datetime.now().strftime('%d %B %Y %H:%M'),
+        'router_ip': router_ip,
     })
 
 def active_users(request):
@@ -1113,7 +1118,8 @@ def add_pppoe_user(request):
         data = json_lib.loads(request.body)
         username = data.get('username')
         password = data.get('password')
-        profile = data.get('profile', 'default')
+        profile = data.get('profile', '')
+        bandwidth = data.get('bandwidth', '')
         
         if not username or not password:
             return JsonResponse({'success': False, 'error': 'Username and password required'})
@@ -1122,13 +1128,37 @@ def add_pppoe_user(request):
         if not router:
             return JsonResponse({'success': False, 'error': 'No router configured'})
             
-        conn, api = _get_mikrotik_api_for_router(router)
-        api.get_resource('/ppp/secret').add(
-            name=username,
-            password=password,
-            profile=profile,
-            service='pppoe'
-        )
+        try:
+            conn, api = _get_mikrotik_api_for_router(router)
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': f'Router Disconnected: {str(e)}'})
+            
+        try:
+            mikrotik_profile = profile if profile else 'default'
+            
+            if bandwidth:
+                mikrotik_profile = f'Profile_{bandwidth.replace("/", "_")}'
+                ppp_profile = api.get_resource('/ppp/profile')
+                existing = ppp_profile.get(**{'name': mikrotik_profile})
+                if not existing:
+                    ppp_profile.add(**{
+                        'name': mikrotik_profile,
+                        'rate-limit': bandwidth,
+                        'only-one': 'yes'
+                    })
+            
+            api.get_resource('/ppp/secret').add(
+                name=username,
+                password=password,
+                profile=mikrotik_profile,
+                service='pppoe'
+            )
+        except Exception as e:
+            if 'conn' in locals() and conn:
+                try: conn.disconnect()
+                except: pass
+            return JsonResponse({'success': False, 'error': f'Failed to add PPPoE user: {str(e)}'})
+            
         conn.disconnect()
         
         _log_activity(request, 'user_kick', f'Added PPPoE user: {username}', router=router) # Using generic type
@@ -1223,7 +1253,24 @@ def get_routers(request):
         'port': r.port
     } for r in routers]
     
-    return JsonResponse({'success': True, 'data': data, 'active_id': active_id})
+    is_offline = True
+    if active_id:
+        try:
+            active_id_int = int(active_id)
+        except (ValueError, TypeError):
+            active_id_int = None
+            
+        active_router = next((r for r in routers if r.id == active_id_int), None)
+        if active_router:
+            import socket
+            try:
+                sock = socket.create_connection((active_router.ip_address, active_router.port), timeout=1.5)
+                sock.close()
+                is_offline = False
+            except Exception:
+                is_offline = True
+            
+    return JsonResponse({'success': True, 'data': data, 'active_id': active_id_int if active_id else None, 'is_offline': is_offline})
 
 @csrf_exempt
 def add_router(request):
@@ -1331,7 +1378,7 @@ def sse_updates(request):
                             # Fetch the latest metrics from the DB
                             metric = SystemMetrics.objects.filter(router=router).first()
                             
-                            if metric:
+                            if metric and (timezone.now() - metric.timestamp).total_seconds() < 60:
                                 interfaces = InterfaceMetrics.objects.filter(system_metric=metric)
                                 interfaces_data = []
                                 for iface in interfaces:
@@ -1407,8 +1454,11 @@ def sse_updates(request):
                                 active_codes.add(s.get('user', ''))
                             
                             hotspot_user_api = api.get_resource('/ip/hotspot/user')
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        data = {"error": f"Failed to connect to router: {str(e)}"}
+                        yield f"data: {json.dumps(data)}\n\n"
+                        time.sleep(2)
+                        continue
                     
                     try:
                         vouchers = Voucher.objects.all()[:200]
@@ -1469,6 +1519,12 @@ def sse_updates(request):
                                 'used_at': v.used_at.strftime('%Y-%m-%d %H:%M') if v.used_at else None,
                             })
                         
+                        if router and 'conn' in locals():
+                            try:
+                                conn.disconnect()
+                            except Exception:
+                                pass
+                                
                         data = {"vouchers": voucher_data}
                     except Exception as e:
                         data = {"error": str(e)}
@@ -1487,7 +1543,24 @@ def sse_updates(request):
                             'port': r.port
                         } for r in routers]
                         
-                        data = {"routers": router_data, "active_id": active_id}
+                        is_offline = True
+                        if active_id:
+                            try:
+                                active_id_int = int(active_id)
+                            except (ValueError, TypeError):
+                                active_id_int = None
+                                
+                            active_router = next((r for r in routers if r.id == active_id_int), None)
+                            if active_router:
+                                import socket
+                                try:
+                                    sock = socket.create_connection((active_router.ip_address, active_router.port), timeout=1.5)
+                                    sock.close()
+                                    is_offline = False
+                                except Exception:
+                                    is_offline = True
+                        
+                        data = {"routers": router_data, "active_id": active_id_int if active_id else None, "is_offline": is_offline}
                     except Exception as e:
                         data = {"error": str(e)}
                         

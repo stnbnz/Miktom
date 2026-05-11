@@ -157,10 +157,24 @@
     function updateDashboard(data) {
         if (data.error) {
             showToast(data.error, 'error');
-            document.getElementById('active-users-body').innerHTML = `<tr><td colspan="7" class="empty-state" style="color: var(--danger)">Router Disconnected</td></tr>`;
-            document.getElementById('blocked-users-body').innerHTML = `<tr><td colspan="4" class="empty-state" style="color: var(--danger)">Router Disconnected</td></tr>`;
+            document.querySelector('.grid').style.display = 'none';
+            if (!document.getElementById('disconnected-msg')) {
+                const msgDiv = document.createElement('div');
+                msgDiv.id = 'disconnected-msg';
+                msgDiv.innerHTML = `<div style="text-align:center; padding: 100px 20px;">
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:20px; opacity: 0.8;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    <h2 style="margin:0 0 10px 0; color:var(--danger);">Router Disconnected</h2>
+                    <p style="color:var(--text-muted);">Cannot view or manage active users while disconnected.</p>
+                </div>`;
+                document.querySelector('.header-info').insertAdjacentElement('afterend', msgDiv);
+            }
             return;
         }
+
+        // Restore visibility
+        document.querySelector('.grid').style.display = 'grid';
+        const msg = document.getElementById('disconnected-msg');
+        if (msg) msg.remove();
 
         const activeUsers = data.users || [];
         const blockedUsers = data.blocked || [];
@@ -250,6 +264,9 @@
                 showToast("User kicked successfully");
             } else {
                 showToast("Failed to kick user: " + data.error, "error");
+                if (data.error.toLowerCase().includes("disconnected") || data.error.toLowerCase().includes("terputus") || data.error.toLowerCase().includes("offline")) {
+                    updateDashboard({error: data.error});
+                }
             }
         } catch (e) {
             showToast("Network error", "error");
@@ -274,6 +291,9 @@
                 showToast(`MAC ${mac} blocked successfully`);
             } else {
                 showToast("Failed to block: " + data.error, "error");
+                if (data.error.toLowerCase().includes("disconnected") || data.error.toLowerCase().includes("terputus") || data.error.toLowerCase().includes("offline")) {
+                    updateDashboard({error: data.error});
+                }
             }
         } catch (e) {
             showToast("Network error", "error");
@@ -294,6 +314,9 @@
                 showToast(`MAC ${mac} unblocked successfully`);
             } else {
                 showToast("Failed to unblock: " + data.error, "error");
+                if (data.error.toLowerCase().includes("disconnected") || data.error.toLowerCase().includes("terputus") || data.error.toLowerCase().includes("offline")) {
+                    updateDashboard({error: data.error});
+                }
             }
         } catch (e) {
             showToast("Network error", "error");

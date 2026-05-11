@@ -159,23 +159,31 @@
     </div>
 </div>
 
-<div class="form-panel">
+<div class="form-panel" id="pppoe-form-panel">
     <h3 style="margin:0 0 20px 0; font-weight:600;">Add New PPPoE Customer</h3>
-    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+    <div style="display:grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px;">
         <div class="form-group">
             <label>Username (PPPoE ID)</label>
-            <input type="text" id="add-username" class="form-control" autocomplete="off" placeholder="e.g. user_rumah1">
+            <input type="text" id="add-username" class="form-control" autocomplete="off" placeholder="user_rumah1" style="padding: 10px 12px;">
         </div>
         <div class="form-group">
             <label>Password</label>
-            <input type="text" id="add-password" class="form-control" autocomplete="off" placeholder="e.g. secret123">
+            <input type="text" id="add-password" class="form-control" autocomplete="off" placeholder="secret123" style="padding: 10px 12px;">
         </div>
         <div class="form-group">
-            <label>Profile (Bandwidth/Billing)</label>
-            <input type="text" id="add-profile" class="form-control" value="default" placeholder="e.g. default">
+            <label>Bandwidth (Optional)</label>
+            <select id="add-bandwidth" class="form-control" style="padding: 10px 12px;">
+                <option value="">Unlimited / Default</option>
+                <option value="1M/1M">1 Mbps</option>
+                <option value="2M/2M">2 Mbps</option>
+                <option value="3M/3M">3 Mbps</option>
+                <option value="5M/5M">5 Mbps</option>
+                <option value="10M/10M">10 Mbps</option>
+                <option value="20M/20M">20 Mbps</option>
+            </select>
         </div>
         <div class="form-group" style="display:flex; align-items:flex-end;">
-            <button class="btn-act" id="add-btn" onclick="addPPPoE()" style="width:100%; height: 43px; justify-content: center;">Add User</button>
+            <button class="btn-act" id="add-btn" onclick="addPPPoE()" style="height: 41px; padding: 0 20px; font-size: 14px;">Add User</button>
         </div>
     </div>
 </div>
@@ -208,6 +216,31 @@
 <script>
     document.getElementById('loader').style.display = 'none';
 
+    function handleDisconnect(err) {
+        document.querySelector('.kpi-row').style.display = 'none';
+        document.querySelector('.table-container').style.display = 'none';
+        document.getElementById('pppoe-form-panel').style.display = 'none';
+        
+        if (!document.getElementById('disconnected-msg')) {
+            const msgDiv = document.createElement('div');
+            msgDiv.id = 'disconnected-msg';
+            msgDiv.innerHTML = `<div style="text-align:center; padding: 100px 20px;">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:20px; opacity: 0.8;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                <h2 style="margin:0 0 10px 0; color:var(--danger);">Router Disconnected</h2>
+                <p style="color:var(--text-muted);">Cannot manage PPPoE users while disconnected.</p>
+            </div>`;
+            document.querySelector('.header-info').insertAdjacentElement('afterend', msgDiv);
+        }
+    }
+
+    function restoreVisibility() {
+        document.querySelector('.kpi-row').style.display = 'grid';
+        document.querySelector('.table-container').style.display = 'block';
+        document.getElementById('pppoe-form-panel').style.display = 'block';
+        const msg = document.getElementById('disconnected-msg');
+        if (msg) msg.remove();
+    }
+
     async function loadPPPoE() {
         const tb = document.getElementById('p-tbody');
         tb.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted);">Loading...</td></tr>';
@@ -215,6 +248,7 @@
             const res = await fetch('/api/pppoe/list');
             const data = await res.json();
             if (data.success) {
+                restoreVisibility();
                 let total = data.data.length;
                 let active = 0;
                 let disabled = 0;
@@ -243,6 +277,9 @@
                 }
             } else {
                 showToast('Failed to load PPPoE users: ' + data.error, 'error');
+                if (data.error.toLowerCase().includes("disconnected") || data.error.toLowerCase().includes("terputus") || data.error.toLowerCase().includes("offline")) {
+                    handleDisconnect(data.error);
+                }
             }
         } catch(e) {
             showToast('Failed to load PPPoE', 'error');
@@ -252,7 +289,7 @@
     async function addPPPoE() {
         const un = document.getElementById('add-username').value;
         const pw = document.getElementById('add-password').value;
-        const pr = document.getElementById('add-profile').value;
+        const bw = document.getElementById('add-bandwidth').value;
 
         if(!un || !pw) return showToast('Username and password are required', 'error');
 
@@ -261,7 +298,7 @@
             const res = await fetch('/api/pppoe/add', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({username: un, password: pw, profile: pr})
+                body: JSON.stringify({username: un, password: pw, profile: '', bandwidth: bw})
             });
             const data = await res.json();
             if (data.success) {
@@ -271,6 +308,9 @@
                 loadPPPoE();
             } else {
                 showToast(data.error, 'error');
+                if (data.error.toLowerCase().includes("disconnected") || data.error.toLowerCase().includes("terputus") || data.error.toLowerCase().includes("offline")) {
+                    handleDisconnect(data.error);
+                }
             }
         } catch(e) {
             showToast('Add failed', 'error');
@@ -289,6 +329,9 @@
                 loadPPPoE();
             } else {
                 showToast(data.error, 'error');
+                if (data.error.toLowerCase().includes("disconnected") || data.error.toLowerCase().includes("terputus") || data.error.toLowerCase().includes("offline")) {
+                    handleDisconnect(data.error);
+                }
             }
         } catch(e) {
             showToast('Delete failed', 'error');
