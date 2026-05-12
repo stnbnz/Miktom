@@ -944,6 +944,18 @@ def active_users_data(request):
         except Exception:
             pass
             
+        try:
+            secrets = api.get_resource('/ppp/secret').get(**{'disabled': 'true'})
+            for s in secrets:
+                blocked_list.append({
+                    'id': s.get('id'),
+                    'mac_address': s.get('name', ''),
+                    'address': 'PPPoE',
+                    'comment': 'Isolated PPPoE User'
+                })
+        except Exception:
+            pass
+            
         conn.disconnect()
         return JsonResponse({'success': True, 'users': active_list, 'blocked': blocked_list})
     except Exception as e:
@@ -1008,64 +1020,81 @@ def manage_blocked_user(request):
         try:
             conn, api = _get_mikrotik_api_for_router(router)
             
-            bindings = api.get_resource('/ip/hotspot/ip-binding')
-            
-            # Find if already exists
-            existing = bindings.get(**{'mac-address': mac_address})
-            
-            if action == 'block':
-                # First, kick them if they are active
+            is_mac = False
+            import re
+            if re.match(r'^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$', mac_address):
+                is_mac = True
+
+            if is_mac:
+                bindings = api.get_resource('/ip/hotspot/ip-binding')
                 try:
-                    active = api.get_resource('/ip/hotspot/active').get(**{'mac-address': mac_address})
-                    if active and len(active) > 0:
-                        api.get_resource('/ip/hotspot/active').remove(id=active[0].get('id'))
+                    existing = bindings.get(**{'mac-address': mac_address})
                 except Exception:
-                    pass
+                    existing = []
                 
-                # Update or Add binding
-                if existing and len(existing) > 0:
-                    bindings.set(id=existing[0].get('id'), type='blocked', comment='Blocked via Dashboard')
-                else:
-                    bindings.add(**{'mac-address': mac_address, 'type': 'blocked', 'comment': 'Blocked via Dashboard'})
-                
-                # Also block from WiFi if applicable
-                try:
-                    acl = api.get_resource('/interface/wireless/access-list')
-                    acl_existing = acl.get(**{'mac-address': mac_address})
-                    if not acl_existing:
-                        acl.add(**{'mac-address': mac_address, 'authentication': 'no', 'forwarding': 'no', 'comment': 'Blocked via Dashboard'})
-                except Exception:
-                    pass
-                
-                _log_activity(request, 'security_ban', f'Blocked MAC: {mac_address}', router=router)
-                
-            elif action == 'unblock':
-                # Try getting existing by upper/lower case to be safe
-                if not existing:
-                    existing = bindings.get(**{'mac-address': mac_address.lower()})
-                if not existing:
-                    existing = bindings.get(**{'mac-address': mac_address.upper()})
+                if action == 'block':
+                    # First, kick them if they are active
+                    try:
+                        active = api.get_resource('/ip/hotspot/active').get(**{'mac-address': mac_address})
+                        if active and len(active) > 0:
+                            api.get_resource('/ip/hotspot/active').remove(id=active[0].get('id'))
+                    except Exception:
+                        pass
                     
-                if existing and len(existing) > 0:
-                    for b in existing:
-                        bindings.remove(id=b.get('id'))
-                
-                # Also unblock from WiFi if applicable
-                try:
-                    acl = api.get_resource('/interface/wireless/access-list')
-                    acl_existing = acl.get(**{'mac-address': mac_address})
-                    if not acl_existing:
-                        acl_existing = acl.get(**{'mac-address': mac_address.lower()})
-                    if not acl_existing:
-                        acl_existing = acl.get(**{'mac-address': mac_address.upper()})
+                    # Update or Add binding
+                    if existing and len(existing) > 0:
+                        bindings.set(id=existing[0].get('id'), type='blocked', comment='Blocked via Dashboard')
+                    else:
+                        bindings.add(**{'mac-address': mac_address, 'type': 'blocked', 'comment': 'Blocked via Dashboard'})
+                    
+                    # Also block from WiFi if applicable
+                    try:
+                        acl = api.get_resource('/interface/wireless/access-list')
+                        acl_existing = acl.get(**{'mac-address': mac_address})
+                        if not acl_existing:
+                            acl.add(**{'mac-address': mac_address, 'authentication': 'no', 'forwarding': 'no', 'comment': 'Blocked via Dashboard'})
+                    except Exception:
+                        pass
                         
-                    if acl_existing:
-                        for a in acl_existing:
-                            acl.remove(id=a.get('id'))
+                elif action == 'unblock':
+                    if not existing:
+                        try: existing = bindings.get(**{'mac-address': mac_address.lower()})
+                        except Exception: pass
+                    if not existing:
+                        try: existing = bindings.get(**{'mac-address': mac_address.upper()})
+                        except Exception: pass
+                        
+                    if existing and len(existing) > 0:
+                        for b in existing:
+                            bindings.remove(id=b.get('id'))
+                    
+                    # Also unblock from WiFi if applicable
+                    try:
+                        acl = api.get_resource('/interface/wireless/access-list')
+                        acl_existing = acl.get(**{'mac-address': mac_address})
+                        if not acl_existing:
+                            acl_existing = acl.get(**{'mac-address': mac_address.lower()})
+                        if not acl_existing:
+                            acl_existing = acl.get(**{'mac-address': mac_address.upper()})
+                            
+                        if acl_existing:
+                            for a in acl_existing:
+                                acl.remove(id=a.get('id'))
+                    except Exception:
+                        pass
+
+            if action == 'unblock':
+                # Also unblock from PPPoE
+                try:
+                    secret_res = api.get_resource('/ppp/secret')
+                    secrets = secret_res.get(**{'name': mac_address})
+                    if secrets:
+                        for s in secrets:
+                            secret_res.set(id=s.get('id'), disabled='false')
                 except Exception:
                     pass
-                
-                _log_activity(request, 'security_ban', f'Unblocked MAC: {mac_address}', router=router)
+
+            _log_activity(request, 'security_ban', f'{action.capitalize()}ed MAC/User: {mac_address}', router=router)
                 
             conn.disconnect()
             return JsonResponse({'success': True})
