@@ -22,6 +22,7 @@ urlpatterns = [
     path('api/active_users_data', views.active_users_data, name='active_users_data'),
     path('api/kick_user', views.kick_hotspot_user, name='kick_hotspot_user'),
     path('api/manage_blocked_user', views.manage_blocked_user, name='manage_blocked_user'),
+    path('api/isolate_pppoe_user', views.isolate_pppoe_user, name='isolate_pppoe_user'),
     
     # PPPoE Management
     path('pppoe/', views.pppoe_page, name='pppoe_page'),

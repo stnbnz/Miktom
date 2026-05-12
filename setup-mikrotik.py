@@ -38,6 +38,12 @@ def parse_args():
     parser.add_argument("--dns", default="8.8.8.8,1.1.1.1")
     parser.add_argument("--guest-user", default="guest")
     parser.add_argument("--guest-pass", default="guest")
+    parser.add_argument("--pppoe-network", default="10.5.51.0/24")
+    parser.add_argument("--pppoe-gateway", default="10.5.51.1")
+    parser.add_argument("--pppoe-pool-range", default="10.5.51.10-10.5.51.254")
+    parser.add_argument("--pppoe-interface", default="ether2")
+    parser.add_argument("--pppoe-user", default="pppoe-test")
+    parser.add_argument("--pppoe-pass", default="pppoe-test")
     return parser.parse_args()
 
 
@@ -97,6 +103,9 @@ def main():
         hs_user_api = api.get_resource("/ip/hotspot/user")
         nat_api = api.get_resource("/ip/firewall/nat")
         user_api = api.get_resource("/user")
+        ppp_profile_api = api.get_resource("/ppp/profile")
+        pppoe_server_api = api.get_resource("/interface/pppoe-server/server")
+        ppp_secret_api = api.get_resource("/ppp/secret")
 
         print("\n[1] Setting up Security Shield...")
         existing_filters = fw_filter_api.get()
@@ -114,7 +123,7 @@ def main():
         print("\n[2] Setting up failover routes...")
         existing_routes = routes_api.get()
         if not any(r.get("comment") == "ISP1_MAIN" for r in existing_routes):
-            routes_api.add(gateway="192.168.1.1", distance="1", comment="ISP1_MAIN", **{"check-gateway": "ping"})
+            routes_api.add(gateway="192.168.88.1", distance="1", comment="ISP1_MAIN", **{"check-gateway": "ping"})
             print(" -> Added ISP1_MAIN route")
         if not any(r.get("comment") == "ISP2_BACKUP" for r in existing_routes):
             routes_api.add(gateway="192.168.2.1", distance="2", comment="ISP2_BACKUP", **{"check-gateway": "ping"})
@@ -227,6 +236,60 @@ def main():
         else:
             print(" -> api_bot already exists")
 
+        print("\n[7] Setting up PPPoE server...")
+        if not any(p.get("name") == "pppoe-pool-main" for p in pool_api.get()):
+            pool_api.add(name="pppoe-pool-main", ranges=args.pppoe_pool_range)
+            print(" -> Created pool pppoe-pool-main")
+
+        if not any(p.get("name") == "pppoe-profile-main" for p in ppp_profile_api.get()):
+            ppp_profile_api.add(
+                name="pppoe-profile-main", 
+                **{"local-address": args.pppoe_gateway, "remote-address": "pppoe-pool-main", "dns-server": args.dns}
+            )
+            print(" -> Created PPPoE profile pppoe-profile-main")
+
+        if not any(s.get("service-name") == "pppoe-main" for s in pppoe_server_api.get()):
+            try:
+                pppoe_server_api.add(
+                    **{"service-name": "pppoe-main", "default-profile": "pppoe-profile-main", "disabled": "false"},
+                    interface=args.pppoe_interface
+                )
+                print(f" -> Created PPPoE server on {args.pppoe_interface}")
+            except Exception as e:
+                print(f" -> Warning: Failed to create PPPoE server (maybe interface {args.pppoe_interface} doesn't exist): {e}")
+        else:
+            for srv in pppoe_server_api.get():
+                if srv.get("service-name") == "pppoe-main" and truthy(srv.get("disabled", "false")):
+                    sid = get_item_id(srv)
+                    if sid:
+                        pppoe_server_api.set(**{".id": sid, "disabled": "false"})
+                        print(" -> Enabled existing pppoe-main server")
+
+        if not any(u.get("name") == args.pppoe_user for u in ppp_secret_api.get()):
+            ppp_secret_api.add(
+                name=args.pppoe_user, 
+                password=args.pppoe_pass, 
+                profile="pppoe-profile-main", 
+                service="pppoe"
+            )
+            print(f" -> Created PPPoE test user {args.pppoe_user}")
+
+        # Re-fetch NAT rules to check if PPPoE NAT exists
+        nat_rules = nat_api.get()
+        if not any(
+            n.get("chain") == "srcnat"
+            and n.get("action") == "masquerade"
+            and n.get("src-address") == args.pppoe_network
+            for n in nat_rules
+        ):
+            nat_api.add(
+                chain="srcnat",
+                action="masquerade",
+                **{"src-address": args.pppoe_network},
+                comment="Masquerade for PPPoE network",
+            )
+            print(f" -> Created NAT masquerade for {args.pppoe_network}")
+
         ActivityLog.objects.create(
             router=router,
             activity_type="qos_change",
@@ -236,9 +299,10 @@ def main():
                 "lan_interface": hs_interface,
                 "wan_interface": args.wan_interface,
                 "hotspot_network": args.hotspot_network,
+                "pppoe_network": args.pppoe_network,
             },
         )
-        print("\n✅ Setup complete. Hotspot and base automation config are ready.")
+        print("\n✅ Setup complete. Hotspot, PPPoE, and base automation config are ready.")
         return 0
     except Exception as e:
         print(f"Error during setup: {e}")

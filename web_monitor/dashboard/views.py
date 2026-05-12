@@ -1076,6 +1076,58 @@ def manage_blocked_user(request):
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
 
+@csrf_exempt
+def isolate_pppoe_user(request):
+    """API endpoint to isolate PPPoE user by disabling secret and kicking session"""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST only'})
+    try:
+        data = json_lib.loads(request.body)
+        username = data.get('username')
+        if not username:
+            return JsonResponse({'success': False, 'error': 'No username provided'})
+            
+        router = _get_active_router(request)
+        if not router:
+            return JsonResponse({'success': False, 'error': 'No router configured'})
+            
+        conn, api = _get_mikrotik_api_for_router(router)
+        try:
+            # Disable PPPoE secret so they cannot reconnect
+            secret_res = api.get_resource('/ppp/secret')
+            secrets = secret_res.get(**{'name': username})
+            if secrets:
+                secret_id = secrets[0].get('id')
+                if secret_id:
+                    secret_res.set(id=secret_id, disabled='true')
+                    
+            # Kick active session
+            active_res = api.get_resource('/ppp/active')
+            active_sessions = active_res.get(**{'name': username})
+            for session in active_sessions:
+                session_id = session.get('id')
+                if session_id:
+                    active_res.remove(id=session_id)
+        except Exception as e:
+            conn.disconnect()
+            return JsonResponse({'success': False, 'error': str(e)})
+            
+        conn.disconnect()
+        
+        _log_activity(
+            request, 
+            'security_ban', 
+            f'Isolated PPPoE user: {username}',
+            router=router,
+            metadata={
+                'username': username,
+                'action': 'isolate_pppoe_user'
+            }
+        )
+        
+        return JsonResponse({'success': True})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
 
 # =================================================
 # PPPOE MANAGEMENT

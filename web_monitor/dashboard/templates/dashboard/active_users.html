@@ -205,8 +205,15 @@
                             Block
                         </button>
                     `;
+                } else if (u.type === 'PPPoE') {
+                    acts = `
+                        <button class="action-btn btn-block" onclick="isolatePppoe('${u.user}')">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                            Isolate
+                        </button>
+                    `;
                 } else {
-                    acts = `<span style="color: var(--text-muted); font-size:12px;">Only Hotspot supported</span>`;
+                    acts = `<span style="color: var(--text-muted); font-size:12px;">No Actions</span>`;
                 }
 
                 html += `
@@ -314,6 +321,29 @@
                 showToast(`MAC ${mac} unblocked successfully`);
             } else {
                 showToast("Failed to unblock: " + data.error, "error");
+                if (data.error.toLowerCase().includes("disconnected") || data.error.toLowerCase().includes("terputus") || data.error.toLowerCase().includes("offline")) {
+                    updateDashboard({error: data.error});
+                }
+            }
+        } catch (e) {
+            showToast("Network error", "error");
+        }
+    }
+
+    async function isolatePppoe(username) {
+        if (!confirm(`Are you sure you want to ISOLATE (disable and kick) PPPoE user: ${username}?`)) return;
+        
+        try {
+            const res = await fetch('/api/isolate_pppoe_user', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: username })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast(`PPPoE User ${username} isolated successfully`);
+            } else {
+                showToast("Failed to isolate: " + data.error, "error");
                 if (data.error.toLowerCase().includes("disconnected") || data.error.toLowerCase().includes("terputus") || data.error.toLowerCase().includes("offline")) {
                     updateDashboard({error: data.error});
                 }
