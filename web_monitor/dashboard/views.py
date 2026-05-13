@@ -1704,6 +1704,19 @@ def sse_updates(request):
                             except Exception:
                                 pass
 
+                            try:
+                                secrets = api.get_resource('/ppp/secret').get()
+                                for s in secrets:
+                                    if str(s.get('disabled', 'false')).lower() == 'true':
+                                        blocked_list.append({
+                                            'id': s.get('id'),
+                                            'mac_address': s.get('name', ''),
+                                            'address': 'PPPoE',
+                                            'comment': 'Isolated PPPoE User'
+                                        })
+                            except Exception:
+                                pass
+
                             conn.disconnect()
                             
                             data = {"users": active_list, "blocked": blocked_list}
