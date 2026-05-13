@@ -945,14 +945,15 @@ def active_users_data(request):
             pass
             
         try:
-            secrets = api.get_resource('/ppp/secret').get(**{'disabled': 'true'})
+            secrets = api.get_resource('/ppp/secret').get()
             for s in secrets:
-                blocked_list.append({
-                    'id': s.get('id'),
-                    'mac_address': s.get('name', ''),
-                    'address': 'PPPoE',
-                    'comment': 'Isolated PPPoE User'
-                })
+                if str(s.get('disabled', 'false')).lower() == 'true':
+                    blocked_list.append({
+                        'id': s.get('id'),
+                        'mac_address': s.get('name', ''),
+                        'address': 'PPPoE',
+                        'comment': 'Isolated PPPoE User'
+                    })
         except Exception:
             pass
             
