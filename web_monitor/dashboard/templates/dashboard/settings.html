@@ -175,21 +175,24 @@
         }
     }
 
-    async function removeRouter(id) {
-        if (!confirm("Are you sure you want to delete this router?")) return;
-        try {
-            const res = await fetch('/api/delete_router/' + id, { method: 'POST' });
-            const dat = await res.json();
-            if (dat.success) {
-                showToast("Router deleted.");
-                fetchRoutersList();
-                loadGlobalRouters(); // update navbar
-            } else {
+    function removeRouter(id) {
+        showGlobalConfirm('Delete Router', 'Are you sure you want to delete this router?', 'Delete', 'var(--danger)', async () => {
+            try {
+                const res = await fetch('/api/delete_router/' + id, { method: 'POST' });
+                const dat = await res.json();
+                if (dat.success) {
+                    showToast("Router deleted.");
+                    fetchRoutersList();
+                    loadGlobalRouters(); // update navbar
+                } else {
+                    showToast("Failed to delete router.", "error");
+                }
+            } catch (e) {
                 showToast("Failed to delete router.", "error");
+            } finally {
+                closeGlobalConfirm();
             }
-        } catch (e) {
-            showToast("Failed to delete router.", "error");
-        }
+        });
     }
 
     function updateRouters(data) {

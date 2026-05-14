@@ -512,6 +512,18 @@
         <span id="action-msg"></span>
     </div>
 
+    <!-- GLOBAL CONFIRM MODAL -->
+    <div id="global-confirm-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); backdrop-filter:blur(10px); z-index:9999; align-items:center; justify-content:center; opacity:0; transition:0.3s;">
+        <div style="background:var(--bg-color); border:1px solid var(--danger); padding:30px; border-radius:15px; text-align:center; box-shadow:0 10px 40px rgba(255,82,82,0.2); max-width:400px; transform:scale(0.9); transition:transform 0.3s ease;">
+            <h2 id="global-confirm-title" style="color:var(--danger); margin:0 0 15px 0;">Confirm Action</h2>
+            <p id="global-confirm-msg" style="color:var(--text-muted); margin-bottom:25px; line-height:1.5; font-size:15px;"></p>
+            <div style="display:flex; gap:10px; justify-content:center;">
+                <button onclick="closeGlobalConfirm()" style="padding:10px 20px; border-radius:8px; border:1px solid var(--glass-border); background:transparent; color:white; cursor:pointer; transition:background 0.2s;">Cancel</button>
+                <button id="global-confirm-btn" style="padding:10px 20px; border-radius:8px; border:none; background:var(--danger); color:white; font-weight:bold; cursor:pointer; box-shadow:0 4px 15px rgba(255,82,82,0.4); transition:transform 0.2s;">Confirm</button>
+            </div>
+        </div>
+    </div>
+
     {% block modals %}{% endblock %}
 
     <script>
@@ -546,6 +558,46 @@
             setTimeout(() => {
                 toast.classList.remove("show");
             }, 3000);
+        }
+
+        let globalConfirmCallback = null;
+
+        function showGlobalConfirm(title, message, btnText, btnColor, callback) {
+            document.getElementById('global-confirm-title').innerText = title || 'Confirm Action';
+            document.getElementById('global-confirm-msg').innerHTML = message;
+            const btn = document.getElementById('global-confirm-btn');
+            btn.innerText = btnText || 'Confirm';
+            if (btnColor) {
+                btn.style.background = btnColor;
+                document.getElementById('global-confirm-title').style.color = btnColor;
+                document.getElementById('global-confirm-modal').children[0].style.borderColor = btnColor;
+                btn.style.boxShadow = `0 4px 15px ${btnColor}66`;
+            } else {
+                btn.style.background = 'var(--danger)';
+                document.getElementById('global-confirm-title').style.color = 'var(--danger)';
+                document.getElementById('global-confirm-modal').children[0].style.borderColor = 'var(--danger)';
+                btn.style.boxShadow = '0 4px 15px rgba(255,82,82,0.4)';
+            }
+            globalConfirmCallback = callback;
+            
+            const modal = document.getElementById('global-confirm-modal');
+            modal.style.display = 'flex';
+            setTimeout(() => {
+                modal.style.opacity = '1';
+                modal.children[0].style.transform = 'scale(1)';
+            }, 10);
+            
+            btn.onclick = function() {
+                btn.innerText = 'Processing...';
+                if (globalConfirmCallback) globalConfirmCallback();
+            };
+        }
+
+        function closeGlobalConfirm() {
+            const modal = document.getElementById('global-confirm-modal');
+            modal.style.opacity = '0';
+            modal.children[0].style.transform = 'scale(0.9)';
+            setTimeout(() => modal.style.display = 'none', 300);
         }
 
         async function loadGlobalRouters() {

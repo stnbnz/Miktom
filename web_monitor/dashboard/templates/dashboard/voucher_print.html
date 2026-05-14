@@ -254,7 +254,7 @@
                         <div class="code-label">Kode Akses Voucher</div>
                         <div class="voucher-code" style="margin-bottom: 0;">{{ v.code }}</div>
                     </div>
-                    <div class="qrcode" id="qr-{{ v.code }}" data-user="{{ v.code }}" data-pass="{{ v.password }}" style="margin-left: 10px; background: white; padding: 4px; border-radius: 8px; border: 1px solid #e2e8f0;"></div>
+                    <div class="qrcode" id="qr-{{ v.code }}" data-user="{{ v.code }}" data-pass="{{ v.password }}" style="margin-left: 10px; background: white; padding: 4px; border-radius: 8px; border: 1px solid #e2e8f0; min-width: 78px; min-height: 78px; flex-shrink: 0; display: flex; justify-content: center; align-items: center;"></div>
                 </div>
 
                 <div class="info-row">
