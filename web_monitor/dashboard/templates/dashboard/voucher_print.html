@@ -234,6 +234,11 @@
         }
 
         /* ── PRINT STYLES ── */
+        @page {
+            size: auto;
+            margin: 0mm;
+        }
+
         @media print {
             * {
                 -webkit-print-color-adjust: exact !important;
@@ -243,7 +248,7 @@
 
             body {
                 background: white;
-                padding: 0;
+                padding: 10mm;
             }
 
             .print-toolbar {
