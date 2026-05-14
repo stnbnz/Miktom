@@ -301,16 +301,7 @@
     </table>
 </div>
 
-<div id="del-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); backdrop-filter:blur(10px); z-index:2000; align-items:center; justify-content:center; opacity:0; transition:0.3s;">
-    <div style="background:var(--bg-color); border:1px solid var(--danger); padding:30px; border-radius:15px; text-align:center; box-shadow:0 10px 40px rgba(255,82,82,0.2);">
-        <h2 style="color:var(--danger); margin:0 0 15px 0;">Delete Voucher</h2>
-        <p style="color:var(--text-muted); margin-bottom:20px;">Delete voucher code: <strong id="del-code" style="color:white;"></strong>?</p>
-        <div style="display:flex; gap:10px; justify-content:center;">
-            <button onclick="closeDel()" style="padding:10px 20px; border-radius:8px; border:1px solid var(--glass-border); background:transparent; color:white; cursor:pointer;">Cancel</button>
-            <button id="del-confirm" onclick="executeDel()" style="padding:10px 20px; border-radius:8px; border:none; background:var(--danger); color:white; font-weight:bold; cursor:pointer;">Delete</button>
-        </div>
-    </div>
-</div>
+<!-- removed del-modal -->
 
 <div id="detail-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); backdrop-filter:blur(10px); z-index:2000; align-items:center; justify-content:center; opacity:0; transition:0.3s;">
     <div style="background:var(--bg-color); border:1px solid var(--glass-border); padding:30px; border-radius:15px; text-align:center; box-shadow:0 10px 40px rgba(0,0,0,0.5); min-width:300px; transform:scale(0.95); transition:transform 0.3s ease;">
@@ -499,32 +490,25 @@ let t=0, a=0, u=0, onl=0, exp=0;
     }
 
     function openDel(c) {
-        del_t = c;
-        document.getElementById('del-code').innerText = c;
-        const m = document.getElementById('del-modal');
-        m.style.display = 'flex';
-        setTimeout(() => m.style.opacity = '1', 10);
-    }
-    async function executeDel() {
-        document.getElementById('del-confirm').innerText = '...';
-        try {
-            const res = await fetch(`/api/voucher/delete/${del_t}`, { method: 'POST' });
-            const dat = await res.json();
-            if(dat.success) {
-                showToast('Deleted voucher '+del_t);
-                loadVouchers();
-            } else {
-                showToast(dat.error, 'error');
-                if (dat.error.toLowerCase().includes("disconnected") || dat.error.toLowerCase().includes("terputus") || dat.error.toLowerCase().includes("offline")) {
-                    updateVouchers({error: dat.error});
+        showGlobalConfirm('Delete Voucher', `Delete voucher code: <strong style="color:white;">${c}</strong>?`, 'Delete', 'var(--danger)', async () => {
+            try {
+                const res = await fetch(`/api/voucher/delete/${c}`, { method: 'POST' });
+                const dat = await res.json();
+                if(dat.success) {
+                    showToast('Deleted voucher '+c);
+                    loadVouchers();
+                } else {
+                    showToast(dat.error, 'error');
+                    if (dat.error.toLowerCase().includes("disconnected") || dat.error.toLowerCase().includes("terputus") || dat.error.toLowerCase().includes("offline")) {
+                        updateVouchers({error: dat.error});
+                    }
                 }
+            } catch(e) {
+                showToast('Delete failed', 'error');
+            } finally {
+                closeGlobalConfirm();
             }
-        } catch(e) {
-            showToast('Delete failed', 'error');
-        } finally {
-            document.getElementById('del-confirm').innerText = 'Delete';
-            closeDel();
-        }
+        });
     }
 
     function openDetail(c) {
@@ -547,11 +531,7 @@ let t=0, a=0, u=0, onl=0, exp=0;
         setTimeout(() => m.style.display = 'none', 300);
     }
 
-    function closeDel() {
-        const m = document.getElementById('del-modal');
-        m.style.opacity = '0';
-        setTimeout(() => m.style.display = 'none', 300);
-    }
+
 
     function printSelected() {
         const c = Array.from(document.querySelectorAll('.row-chk:checked')).map(x => x.value);
@@ -567,30 +547,32 @@ let t=0, a=0, u=0, onl=0, exp=0;
             return;
         }
         
-        if(!confirm(`Delete ${c.length} voucher(s)? This action cannot be undone.`)) return;
-        
-        try {
-            const res = await fetch('/api/voucher/delete_batch', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ codes: c })
-            });
-            const dat = await res.json();
-            if(dat.success) {
-                let msg = `Deleted ${dat.deleted}/${dat.total} vouchers from DB, ${dat.deleted_from_mikrotik} from MikroTik`;
-                if (dat.kicked_sessions > 0) msg += `, kicked ${dat.kicked_sessions} active sessions`;
-                showToast(msg);
-                loadVouchers();
-                document.querySelectorAll('.row-chk').forEach(x => x.checked = false);
-            } else {
-                showToast(dat.error, 'error');
-                if (dat.error.toLowerCase().includes("disconnected") || dat.error.toLowerCase().includes("terputus") || dat.error.toLowerCase().includes("offline")) {
-                    updateVouchers({error: dat.error});
+        showGlobalConfirm('Delete Vouchers', `Delete <strong style="color:white;">${c.length}</strong> voucher(s)?<br><br>This action cannot be undone.`, 'Delete', 'var(--danger)', async () => {
+            try {
+                const res = await fetch('/api/voucher/delete_batch', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ codes: c })
+                });
+                const dat = await res.json();
+                if(dat.success) {
+                    let msg = `Deleted ${dat.deleted}/${dat.total} vouchers from DB, ${dat.deleted_from_mikrotik} from MikroTik`;
+                    if (dat.kicked_sessions > 0) msg += `, kicked ${dat.kicked_sessions} active sessions`;
+                    showToast(msg);
+                    loadVouchers();
+                    document.querySelectorAll('.row-chk').forEach(x => x.checked = false);
+                } else {
+                    showToast(dat.error, 'error');
+                    if (dat.error.toLowerCase().includes("disconnected") || dat.error.toLowerCase().includes("terputus") || dat.error.toLowerCase().includes("offline")) {
+                        updateVouchers({error: dat.error});
+                    }
                 }
+            } catch(e) {
+                showToast('Delete failed', 'error');
+            } finally {
+                closeGlobalConfirm();
             }
-        } catch(e) {
-            showToast('Delete failed', 'error');
-        }
+        });
     }
 
     window.addEventListener('focus', () => {

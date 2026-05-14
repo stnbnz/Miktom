@@ -337,27 +337,29 @@
         });
     }
 
-    async function isolatePppoe(username) {
-        if (!confirm(`Are you sure you want to ISOLATE (disable and kick) PPPoE user: ${username}?`)) return;
-        
-        try {
-            const res = await fetch('/api/isolate_pppoe_user', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username: username })
-            });
-            const data = await res.json();
-            if (data.success) {
-                showToast(`PPPoE User ${username} isolated successfully`);
-            } else {
-                showToast("Failed to isolate: " + data.error, "error");
-                if (data.error.toLowerCase().includes("disconnected") || data.error.toLowerCase().includes("terputus") || data.error.toLowerCase().includes("offline")) {
-                    updateDashboard({error: data.error});
+    function isolatePppoe(username) {
+        showGlobalConfirm('Isolate PPPoE', `Are you sure you want to ISOLATE (disable and kick) PPPoE user:<br><strong style="color:white;">${username}</strong>?`, 'Isolate', 'var(--danger)', async () => {
+            try {
+                const res = await fetch('/api/isolate_pppoe_user', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: username })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast(`PPPoE User ${username} isolated successfully`);
+                } else {
+                    showToast("Failed to isolate: " + data.error, "error");
+                    if (data.error.toLowerCase().includes("disconnected") || data.error.toLowerCase().includes("terputus") || data.error.toLowerCase().includes("offline")) {
+                        updateDashboard({error: data.error});
+                    }
                 }
+            } catch (e) {
+                showToast("Network error", "error");
+            } finally {
+                closeGlobalConfirm();
             }
-        } catch (e) {
-            showToast("Network error", "error");
-        }
+        });
     }
 
 </script>
