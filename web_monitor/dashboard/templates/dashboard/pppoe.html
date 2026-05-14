@@ -319,23 +319,26 @@
         }
     }
 
-    async function delPPPoE(un) {
-        if(!confirm(`Delete PPPoE user ${un}?`)) return;
-        try {
-            const res = await fetch(`/api/pppoe/delete/${un}`, { method: 'POST' });
-            const data = await res.json();
-            if (data.success) {
-                showToast(`Deleted ${un}`);
-                loadPPPoE();
-            } else {
-                showToast(data.error, 'error');
-                if (data.error.toLowerCase().includes("disconnected") || data.error.toLowerCase().includes("terputus") || data.error.toLowerCase().includes("offline")) {
-                    handleDisconnect(data.error);
+    function delPPPoE(un) {
+        showGlobalConfirm('Delete PPPoE', `Delete PPPoE user <strong style="color:white;">${un}</strong>?`, 'Delete', 'var(--danger)', async () => {
+            try {
+                const res = await fetch(`/api/pppoe/delete/${un}`, { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    showToast(`Deleted ${un}`);
+                    loadPPPoE();
+                } else {
+                    showToast(data.error, 'error');
+                    if (data.error.toLowerCase().includes("disconnected") || data.error.toLowerCase().includes("terputus") || data.error.toLowerCase().includes("offline")) {
+                        handleDisconnect(data.error);
+                    }
                 }
+            } catch(e) {
+                showToast('Delete failed', 'error');
+            } finally {
+                closeGlobalConfirm();
             }
-        } catch(e) {
-            showToast('Delete failed', 'error');
-        }
+        });
     }
 
     loadPPPoE();
