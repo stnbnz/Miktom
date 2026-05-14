@@ -249,14 +249,14 @@
             </div>
 
             <div class="card-body">
-                <div style="display: flex; gap: 10px; margin-bottom: 14px;">
-                    <div style="flex: 1;">
+                <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px;">
+                    <div>
                         <div class="code-label">Username</div>
-                        <div class="voucher-code" style="margin-bottom: 0; font-size: 16px; letter-spacing: 1px; padding: 10px 8px;">{{ v.code }}</div>
+                        <div class="voucher-code" style="margin-bottom: 0; font-size: 20px; letter-spacing: 2px; padding: 8px 14px;">{{ v.code }}</div>
                     </div>
-                    <div style="flex: 1;">
+                    <div>
                         <div class="code-label">Password</div>
-                        <div class="voucher-code" style="margin-bottom: 0; font-size: 16px; letter-spacing: 1px; padding: 10px 8px;">{% if v.password %}{{ v.password }}{% else %}{{ v.code }}{% endif %}</div>
+                        <div class="voucher-code" style="margin-bottom: 0; font-size: 20px; letter-spacing: 2px; padding: 8px 14px;">{% if v.password %}{{ v.password }}{% else %}{{ v.code }}{% endif %}</div>
                     </div>
                 </div>
 
