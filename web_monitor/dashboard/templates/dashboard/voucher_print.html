@@ -122,24 +122,25 @@
 
         .code-label {
             font-size: 10px;
-            font-weight: 700;
+            font-weight: 800;
             text-transform: uppercase;
-            letter-spacing: 1px;
-            color: #94a3b8;
+            letter-spacing: 1.5px;
+            color: #64748b;
             margin-bottom: 6px;
         }
         .voucher-code {
             font-family: 'Courier Prime', 'Courier New', monospace;
-            font-size: 22px;
-            font-weight: 700;
+            font-size: 20px;
+            font-weight: 800;
             letter-spacing: 3px;
-            color: #1a1a2e;
-            background: #f1f5f9;
-            border: 2px dashed #cbd5e1;
-            border-radius: 10px;
-            padding: 10px 14px;
+            color: #0f172a;
+            background: #f8fafc;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            padding: 8px 12px;
             text-align: center;
-            margin-bottom: 14px;
+            margin-bottom: 0;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
         }
 
         .info-row {
@@ -187,18 +188,25 @@
 
         /* ── PRINT STYLES ── */
         @media print {
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+                color-adjust: exact !important;
+            }
             body {
                 background: white;
-                padding: 8px;
+                padding: 0;
             }
             .print-toolbar { display: none; }
             .voucher-grid {
                 grid-template-columns: repeat(3, 1fr);
-                gap: 10px;
+                gap: 15px;
             }
             .voucher-card {
-                box-shadow: none;
-                border: 1px solid #ddd;
+                box-shadow: 0 4px 15px rgba(0,0,0,0.05) !important;
+                border: 2px solid #f1f5f9;
+                break-inside: avoid;
+                page-break-inside: avoid;
             }
         }
 
@@ -249,14 +257,14 @@
             </div>
 
             <div class="card-body">
-                <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px;">
+                <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 18px;">
                     <div>
-                        <div class="code-label">Username</div>
-                        <div class="voucher-code" style="margin-bottom: 0; font-size: 20px; letter-spacing: 2px; padding: 8px 14px;">{{ v.code }}</div>
+                        <div class="code-label">USERNAME</div>
+                        <div class="voucher-code">{{ v.code }}</div>
                     </div>
                     <div>
-                        <div class="code-label">Password</div>
-                        <div class="voucher-code" style="margin-bottom: 0; font-size: 20px; letter-spacing: 2px; padding: 8px 14px;">{% if v.password %}{{ v.password }}{% else %}{{ v.code }}{% endif %}</div>
+                        <div class="code-label">PASSWORD</div>
+                        <div class="voucher-code">{% if v.password %}{{ v.password }}{% else %}{{ v.code }}{% endif %}</div>
                     </div>
                 </div>
 
