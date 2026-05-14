@@ -249,12 +249,15 @@
             </div>
 
             <div class="card-body">
-                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px;">
+                <div style="display: flex; gap: 10px; margin-bottom: 14px;">
                     <div style="flex: 1;">
-                        <div class="code-label">Kode Akses Voucher</div>
-                        <div class="voucher-code" style="margin-bottom: 0;">{{ v.code }}</div>
+                        <div class="code-label">Username</div>
+                        <div class="voucher-code" style="margin-bottom: 0; font-size: 16px; letter-spacing: 1px; padding: 10px 8px;">{{ v.code }}</div>
                     </div>
-                    <div class="qrcode" id="qr-{{ v.code }}" data-user="{{ v.code }}" data-pass="{{ v.password }}" style="margin-left: 10px; background: white; padding: 4px; border-radius: 8px; border: 1px solid #e2e8f0; min-width: 78px; min-height: 78px; flex-shrink: 0; display: flex; justify-content: center; align-items: center;"></div>
+                    <div style="flex: 1;">
+                        <div class="code-label">Password</div>
+                        <div class="voucher-code" style="margin-bottom: 0; font-size: 16px; letter-spacing: 1px; padding: 10px 8px;">{% if v.password %}{{ v.password }}{% else %}{{ v.code }}{% endif %}</div>
+                    </div>
                 </div>
 
                 <div class="info-row">
@@ -294,28 +297,6 @@
     </div>
     {% endif %}
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <script>
-        document.addEventListener("DOMContentLoaded", function() {
-            const routerIp = "{{ router_ip }}";
-            const qrElements = document.querySelectorAll('.qrcode');
-            
-            qrElements.forEach(function(el) {
-                const user = el.getAttribute('data-user');
-                const pass = el.getAttribute('data-pass');
-                // The standard login URL for MikroTik Hotspot
-                const loginUrl = `http://${routerIp}/login?username=${encodeURIComponent(user)}&password=${encodeURIComponent(pass)}`;
-                
-                new QRCode(el, {
-                    text: loginUrl,
-                    width: 70,
-                    height: 70,
-                    colorDark : "#1a1a2e",
-                    colorLight : "#ffffff",
-                    correctLevel : QRCode.CorrectLevel.L
-                });
-            });
-        });
-    </script>
+
 </body>
 </html>
