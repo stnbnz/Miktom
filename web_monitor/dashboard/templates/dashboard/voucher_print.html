@@ -324,10 +324,11 @@
                     {% elif v.profile == '3jam' %}3 Jam
                     {% elif v.profile == '1hari' %}1 Hari
                     {% elif v.profile == '1minggu' %}1 Minggu
-                    {% else %}{{ v.profile }}{% endif %}
+                    {% elif v.profile|lower == 'custom' %}{{ v.duration_hours|floatformat:0 }} Jam
+                    {% else %}{{ v.profile|title }}{% endif %}
                 </div>
                 <div class="package-desc">
-                    Berlaku {{ v.duration_hours }} jam setelah login pertama
+                    Berlaku {{ v.duration_hours|floatformat:0 }} jam setelah login pertama
                 </div>
             </div>
 
